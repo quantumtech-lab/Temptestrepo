@@ -11,7 +11,7 @@
   "quality": "Multi",
   "baseUrl": "https://kinoger.to",
   "searchBaseUrl": "https://kinoger.to?do=search&subaction=search&titleonly=3&story=%s&x=0&y=0&submit=submit",
-  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger2.js",
+  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinogers.js",
   "asyncJS": true,
   "streamAsyncJS": false,
   "softsub": false
