@@ -1,0 +1,18 @@
+{
+  "sourceName": "Kinoger",
+  "iconUrl": "https://kinoger.to",
+  "author": {
+    "name": "Community",
+    "icon": "https://github.com"
+  },
+  "version": "1.0.2",
+  "language": "German",
+  "streamType": "HLS",
+  "quality": "Multi",
+  "baseUrl": "https://kinoger.to",
+  "searchBaseUrl": "https://kinoger.to?do=search&subaction=search&titleonly=3&story=%s&x=0&y=0&submit=submit",
+  "scriptUrl": "https://mp3fa6cbfb3b768da17f.free.beeceptor.com/data",
+  "asyncJS": true,
+  "streamAsyncJS": false,
+  "softsub": false
+}
