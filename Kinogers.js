@@ -1,34 +1,69 @@
+// 1. SEARCH FUNCTION: Uses fetchv2 to find the movie list
 async function search(query) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
     try {
         const searchUrl = `https://kinoger.to{encodeURIComponent(query)}&x=0&y=0&submit=submit`;
         
-        // Added a standard User-Agent header to avoid bot detection
-        const response = await fetch(searchUrl, {
-            signal: controller.signal,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1'
-            }
-        });
-        
-        clearTimeout(id);
-        const html = await response.text();
-        
+        // fetchv2 usually returns the text body directly or an object containing it
+        const response = await fetchv2(searchUrl);
+        const html = typeof response === 'string' ? response : response.body;
+
+        if (!html) return [];
+
         const results = [];
         const regex = /<div class="titlecontrol">.*?<a href="(.*?)">(.*?)<\/a>/gs;
         let match;
+        
         while ((match = regex.exec(html)) !== null) {
+            let foundUrl = match[1];
+            if (!foundUrl.startsWith('http')) {
+                foundUrl = `https://kinoger.to${foundUrl.startsWith('/') ? '' : '/'}${foundUrl}`;
+            }
+
             results.push({
                 title: match[2].replace(" Film", "").trim(),
-                url: match[1].startsWith('http') ? match[1] : `https://kinoger.to${match[1]}`,
+                url: foundUrl,
                 poster: "" 
             });
         }
         return results;
     } catch (e) {
-        console.error("Search failed:", e);
-        return []; // Return empty instead of hanging
+        return []; 
+    }
+}
+
+// 2. GETSOURCE FUNCTION: Uses fetchv2 to find video links
+async function getSource(url) {
+    try {
+        const response = await fetchv2(url);
+        const html = typeof response === 'string' ? response : response.body;
+
+        const scriptRegex = /<div id="container-video.*?<script>(.*?)<\/script>/gs;
+        let match = scriptRegex.exec(html);
+        if (!match) return [];
+
+        let rawData = match[1].substring(match[1].indexOf("["), match[1].lastIndexOf("]") + 1);
+        const sanitizedJson = rawData.replace(/'/g, '"');
+
+        const linksTable = JSON.parse(sanitizedJson);
+        const flattened = linksTable.flat(2); 
+        const finalLinks = [];
+
+        flattened.forEach(link => {
+            if (link && typeof link === 'string' && link.includes("http")) {
+                let cleanLink = link
+                    .replace("kinoger.ru", "voe.sx")
+                    .replace("kinoger.be", "vidhide.com")
+                    .replace("kinoger.pw", "vidguard.to");
+
+                finalLinks.push({
+                    name: "Mirror",
+                    url: cleanLink,
+                    type: "hls" 
+                });
+            }
+        });
+        return finalLinks;
+    } catch (e) {
+        return [];
     }
 }
