@@ -1,6 +1,6 @@
 async function searchResults(keyword) {
     try {
-        const searchUrl = `https://kinoger.to{encodeURIComponent(keyword)}&x=0&y=0&submit=submit`;
+        const searchUrl = `https://kinoger.to/${encodeURIComponent(keyword)}&x=0&y=0&submit=submit`;
         
         // Kinoger.to often checks for Referer and User-Agent to prevent 400 errors
         const headers = {
