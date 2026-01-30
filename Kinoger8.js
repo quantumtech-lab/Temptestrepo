@@ -3,7 +3,8 @@ const proxyPrefix = "https://api.allorigins.win";
 
 async function searchResults(keyword) {
     try {
-        const searchUrl = `https://kinoger.to${encodeURIComponent(keyword)}&x=0&y=0&submit=submit`;
+        //const searchUrl = `https://kinoger.to${encodeURIComponent(keyword)}&x=0&y=0&submit=submit`;
+        const searchUrl = `https://kinoger.to/index.php?story=${encodeURIComponent(keyword)}&do=search&subaction=search`;
         const response = await fetch(proxyPrefix + encodeURIComponent(searchUrl));
         const html = await response.text();
 
