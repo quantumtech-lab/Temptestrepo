@@ -1,5 +1,5 @@
 // Use HTTPS to avoid Mixed Content blocks on sora.jm26.net
-const proxyPrefix = "https://api.allorigins.win";
+const proxyPrefix = "https://api.allorigins.win/get?url=";
 
 async function searchResults(keyword) {
     try {
