@@ -10,8 +10,8 @@
   "streamType": "HLS",
   "quality": "Multi",
   "baseUrl": "https://kinoger.to",
-  "searchBaseUrl": "https://kinoger.to/index.php?story={searchTerms}&do=search&subaction=search",
-  "scriptUrl": "https://github.com/quantumtech-lab/Temptestrepo/raw/refs/heads/main/Kinoger12.js",
+  "searchBaseUrl": "https://kinoger.to/index.php?story=&do=search&subaction=search",
+  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger12.js",
   "asyncJS": true,
   "streamAsyncJS": false,
   "softsub": false
