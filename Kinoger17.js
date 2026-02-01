@@ -74,19 +74,27 @@ async function searchResults(keyword) {
 async function load(url) {
     try {
         const targetUrl = url.startsWith('http') ? url : `${BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-        const response = await fetchv2(targetUrl, { 'Referer': BASE_URL + '/' });
+        
+        // redirect: 'follow' is the key fix for your error
+        const response = await fetchv2(targetUrl, { 
+            method: 'GET',
+            headers: {
+                'Referer': BASE_URL + '/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            redirect: 'follow' 
+        });
+        
         const html = await response.text();
 
-        // 1. Metadata with fallback titles
+        // 1. Metadata Extraction
         const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").replace(" Film", "").trim() : "Unknown";
+        const title = titleMatch ? titleMatch.replace(/<[^>]*>/g, "").replace(" Film", "").trim() : "Unknown Title";
 
         const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
-        let poster = posterMatch ? posterMatch[1] : "";
-        if (poster && !poster.startsWith('http')) poster = `${BASE_URL}${poster}`;
+        let poster = posterMatch ? (posterMatch.startsWith('http') ? posterMatch : `${BASE_URL}${posterMatch}`) : "";
 
-        // 2. Robust Script Extraction
-        // Instead of regexing the whole div, we target the logic where the array starts
+        // 2. Video Script logic (CloudStream/Kinoger style)
         const scriptBlocks = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [];
         let linksData = [];
         let isMovie = false;
@@ -95,44 +103,33 @@ async function load(url) {
             if (script.includes("container-video") || script.includes("0.2")) {
                 if (script.includes(",0.2)")) isMovie = true;
 
-                // Find content between the first [ and the last ]
                 const start = script.indexOf("[");
                 const end = script.lastIndexOf("]");
                 
                 if (start !== -1 && end !== -1) {
-                    let rawArray = script.substring(start, end + 1);
-                    
                     try {
-                        // CLEANER: Kinoger uses ' which breaks JSON.parse
-                        // We replace ' with " and remove trailing commas
-                        let cleanJson = rawArray
-                            .replace(/'/g, '"') 
-                            .replace(/,\s*]/g, ']') // Remove trailing commas
-                            .replace(/,\s*}/g, '}'); 
-                        
+                        let rawArray = script.substring(start, end + 1);
+                        // Convert JS array syntax to JSON
+                        let cleanJson = rawArray.replace(/'/g, '"').replace(/,\s*]/g, ']');
                         const parsed = JSON.parse(cleanJson);
                         if (Array.isArray(parsed)) linksData.push(parsed);
-                    } catch (e) {
-                        console.log("Parsing individual script failed, skipping...");
-                    }
+                    } catch (e) { continue; }
                 }
             }
         }
 
-        if (linksData.length === 0) return JSON.stringify({ error: "No video sources found" });
+        if (linksData.length === 0) return JSON.stringify({ error: "No video data" });
 
-        // 3. Matrix Transposition (Matches Kotlin Logic)
+        // 3. Matrix Transposition
         const transposedLinks = transpose(linksData).map(row => transpose(row));
-
         const episodes = [];
+
         transposedLinks.forEach((seasonList, sIdx) => {
             seasonList.forEach((episodeIframes, eIdx) => {
-                // Filter out non-url strings
                 const validLinks = episodeIframes.filter(l => typeof l === 'string' && l.includes("http"));
-                
                 if (validLinks.length > 0) {
                     episodes.push({
-                        name: isMovie ? title : `Staffel ${sIdx + 1} - Episode ${eIdx + 1}`,
+                        name: isMovie ? title : `Season ${sIdx + 1} - Episode ${eIdx + 1}`,
                         season: sIdx + 1,
                         episode: eIdx + 1,
                         data: JSON.stringify({ links: validLinks })
@@ -140,9 +137,6 @@ async function load(url) {
                 }
             });
         });
-
-        // If after all that we have no episodes, the site structure changed
-        if (episodes.length === 0) throw new Error("Source parsing yielded 0 episodes");
 
         return JSON.stringify({
             title,
