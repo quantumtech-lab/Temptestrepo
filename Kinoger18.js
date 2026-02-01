@@ -84,53 +84,53 @@ async function load(url) {
         const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
         const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").replace(" Film", "").trim() : "Unknown";
 
-        // 2. Extract Tabbed Arrays (from Part 1 & 2)
-        // These contain the iframe sources like https://kinoger.re
-        const arrayRegex = /\.show\(\d+,\s*(\[\[[\s\S]*?\]\])\)/g;
-        let allTabArrays = [];
-        let match;
+        // 2. THE FIX: Find any nested array containing Kinoger URLs
+        // This looks for: [[ 'https://... ', 'https://... ' ]]
+        // The [\s\S]*? handles the newlines and spaces found in your HTML snippet
+        const universalRegex = /\[\s*\[\s*['"]\s*https?:\/\/kinoger[\s\S]*?\]\s*\]/g;
+        let allMirrors = [];
+        let arrayMatch;
 
-        while ((match = arrayRegex.exec(html)) !== null) {
+        while ((arrayMatch = universalRegex.exec(html)) !== null) {
             try {
-                let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*]/g, ']');
-                const parsed = JSON.parse(cleanJson);
-                if (Array.isArray(parsed)) allTabArrays.push(parsed);
-            } catch (e) {}
+                // Convert JS array string to valid JSON
+                let jsonString = arrayMatch[0]
+                    .replace(/'/g, '"') 
+                    .replace(/,\s*\]/g, ']') // remove trailing commas
+                    .replace(/\]\s*,/g, '],');
+                
+                const parsed = JSON.parse(jsonString);
+                if (Array.isArray(parsed)) allMirrors.push(parsed);
+            } catch (e) {
+                // If JSON.parse fails, we try a manual string split as fallback
+                const manualLinks = arrayMatch[0].match(/https?:\/\/[^'"]+/g);
+                if (manualLinks) allMirrors.push([manualLinks]);
+            }
         }
 
-        // 3. Extract direct HLS Master Playlists (from your Player HTML)
-        // We look for .m3u8 links inside the HTML
-        const hlsMatch = html.match(/src="([^"]+master\.m3u8[^"]+)"/i);
-        const directHls = hlsMatch ? hlsMatch[1] : null;
+        if (allMirrors.length === 0) return JSON.stringify({ error: "No episodes found in source" });
 
+        // 3. Map to Episode Objects
         const episodes = [];
-        if (allTabArrays.length > 0) {
-            const firstTab = allTabArrays[0];
-            firstTab.forEach((seasonArray, sIdx) => {
-                seasonArray.forEach((epUrl, eIdx) => {
-                    let mirrors = [];
-                    // Collect links from all tabs for this episode
-                    allTabArrays.forEach(tab => {
-                        try {
-                            const link = tab[sIdx][eIdx];
-                            if (link && link.includes('http')) mirrors.push(link.trim());
-                        } catch (e) {}
-                    });
-
-                    // Add the direct HLS link to the mirrors if we found one
-                    if (directHls && eIdx === 0) mirrors.push(directHls);
-
-                    if (mirrors.length > 0) {
-                        episodes.push({
-                            name: `Staffel ${sIdx + 1} - Episode ${eIdx + 1}`,
-                            season: sIdx + 1,
-                            episode: eIdx + 1,
-                            data: JSON.stringify({ links: mirrors })
-                        });
-                    }
+        
+        /**
+         * Based on your snippet: [['ep1', 'ep2', 'ep3'...]]
+         * We take the first successful array found and turn each entry into an episode.
+         */
+        const firstSet = allMirrors[0][0]; // Get the first inner array
+        
+        firstSet.forEach((link, index) => {
+            const cleanLink = link.trim();
+            if (cleanLink.includes("http")) {
+                episodes.push({
+                    name: `Episode ${index + 1}`,
+                    season: 1,
+                    episode: index + 1,
+                    // Pass the link as the data
+                    data: JSON.stringify({ links: [cleanLink] })
                 });
-            });
-        }
+            }
+        });
 
         const isMovie = html.includes(",0.2)") || episodes.length === 1;
 
