@@ -5,13 +5,13 @@
     "name": "Community",
     "icon": "https://kinoger.to/templates/kinoger/images/logo.png"
   },
-  "version": "1.0.3",
+  "version": "1.0.4",
   "language": "German",
   "streamType": "HLS",
   "quality": "Multi",
   "baseUrl": "https://kinoger.to",
   "searchBaseUrl": "https://kinoger.to/index.php?story=&do=search&subaction=search",
-  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger19.js",
+  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger20.js",
   "asyncJS": true,
   "streamAsyncJS": false,
   "softsub": false
