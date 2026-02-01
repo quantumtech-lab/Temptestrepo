@@ -1,0 +1,18 @@
+{
+  "sourceName": "Kinogers",
+  "iconUrl": "https://kinoger.to/templates/kinoger/images/logo.png",
+  "author": {
+    "name": "Community",
+    "icon": "https://kinoger.to/templates/kinoger/images/logo.png"
+  },
+  "version": "1.0.2",
+  "language": "German",
+  "streamType": "HLS",
+  "quality": "Multi",
+  "baseUrl": "https://kinoger.to",
+  "searchBaseUrl": "https://kinoger.to/index.php?story=&do=search&subaction=search",
+  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger14.js",
+  "asyncJS": true,
+  "streamAsyncJS": false,
+  "softsub": false
+}
