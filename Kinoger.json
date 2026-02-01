@@ -1,9 +1,9 @@
 {
   "sourceName": "Kinoger",
-  "iconUrl": "https://kinoger.to",
+  "iconUrl": "https://kinoger.to/templates/kinoger/images/",
   "author": {
     "name": "Community",
-    "icon": "https://github.com"
+    "icon": "logo.png"
   },
   "version": "1.0.2",
   "language": "German",
@@ -11,7 +11,7 @@
   "quality": "Multi",
   "baseUrl": "https://kinoger.to",
   "searchBaseUrl": "https://kinoger.to/index.php?story=&do=search&subaction=search",
-  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger14.js",
+  "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger15.js",
   "asyncJS": true,
   "streamAsyncJS": false,
   "softsub": false
