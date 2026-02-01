@@ -82,67 +82,55 @@ async function load(url) {
 
         // 1. Metadata
         const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").replace(" Film", "").trim() : "Unknown Title";
+        const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").replace(" Film", "").trim() : "Unknown";
 
-        // 2. Extract arrays from all tabs (pw, fsst, go, ollhd)
-        // Regex looks for any .show() call and captures the nested array inside
-        const arrayRegex = /\.\s*show\s*\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        // 2. Extract Tabbed Arrays (from Part 1 & 2)
+        // These contain the iframe sources like https://kinoger.re
+        const arrayRegex = /\.show\(\d+,\s*(\[\[[\s\S]*?\]\])\)/g;
         let allTabArrays = [];
         let match;
 
         while ((match = arrayRegex.exec(html)) !== null) {
             try {
-                // Convert JS array string (with single quotes) to valid JSON
-                // Also trims spaces inside the stringified array
-                let jsonString = match[1]
-                    .replace(/'/g, '"') 
-                    .replace(/,\s*\]/g, ']') // remove trailing commas
-                    .replace(/\]\s*,/g, '],');
-                
-                const parsed = JSON.parse(jsonString);
+                let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*]/g, ']');
+                const parsed = JSON.parse(cleanJson);
                 if (Array.isArray(parsed)) allTabArrays.push(parsed);
-            } catch (e) { 
-                console.error("Tab parse error"); 
-            }
+            } catch (e) {}
         }
 
-        if (allTabArrays.length === 0) return JSON.stringify({ error: "No sources found" });
+        // 3. Extract direct HLS Master Playlists (from your Player HTML)
+        // We look for .m3u8 links inside the HTML
+        const hlsMatch = html.match(/src="([^"]+master\.m3u8[^"]+)"/i);
+        const directHls = hlsMatch ? hlsMatch[1] : null;
 
-        /**
-         * 3. Group by Episode
-         * Kinoger mirrors are structured as [Tab][Season][Episode]
-         * We want to group all Tabs for each specific Episode
-         */
         const episodes = [];
-        
-        // Use the first tab to determine how many seasons/episodes exist
-        // Usually, Kinoger flattens seasons into the main array for display
-        const firstTab = allTabArrays[0]; 
-        
-        firstTab.forEach((seasonArray, sIdx) => {
-            seasonArray.forEach((episodeUrl, eIdx) => {
-                let mirrors = [];
-                
-                // Collect the same episode index from every other tab
-                allTabArrays.forEach(tab => {
-                    try {
-                        const link = tab[sIdx][eIdx];
-                        if (link && link.includes('http')) {
-                            mirrors.push(link.trim());
-                        }
-                    } catch (err) {}
-                });
-
-                if (mirrors.length > 0) {
-                    episodes.push({
-                        name: `Staffel ${sIdx + 1} - Episode ${eIdx + 1}`,
-                        season: sIdx + 1,
-                        episode: eIdx + 1,
-                        data: JSON.stringify({ links: mirrors })
+        if (allTabArrays.length > 0) {
+            const firstTab = allTabArrays[0];
+            firstTab.forEach((seasonArray, sIdx) => {
+                seasonArray.forEach((epUrl, eIdx) => {
+                    let mirrors = [];
+                    // Collect links from all tabs for this episode
+                    allTabArrays.forEach(tab => {
+                        try {
+                            const link = tab[sIdx][eIdx];
+                            if (link && link.includes('http')) mirrors.push(link.trim());
+                        } catch (e) {}
                     });
-                }
+
+                    // Add the direct HLS link to the mirrors if we found one
+                    if (directHls && eIdx === 0) mirrors.push(directHls);
+
+                    if (mirrors.length > 0) {
+                        episodes.push({
+                            name: `Staffel ${sIdx + 1} - Episode ${eIdx + 1}`,
+                            season: sIdx + 1,
+                            episode: eIdx + 1,
+                            data: JSON.stringify({ links: mirrors })
+                        });
+                    }
+                });
             });
-        });
+        }
 
         const isMovie = html.includes(",0.2)") || episodes.length === 1;
 
