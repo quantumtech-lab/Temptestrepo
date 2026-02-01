@@ -25,15 +25,34 @@ async function searchResults(keyword) {
         const html = await response.text();
         const results = [];
 
-        // Matches the titlecontrol div used in the Kotlin source
-        const regex = /<div class="titlecontrol">[\s\S]*?<a href="([^"]+)"[^>]*>(.*?)<\/a>/g;
-        let match;
+        /**
+         * Logic based on your HTML:
+         * 1. The title/link is in <div class="titlecontrol">
+         * 2. The image is in the NEXT <div class="general_box"> inside <div class="content_text">
+         */
+        const blocks = html.split('<div class="titlecontrol">');
+        
+        // Skip the first split as it's the header
+        for (let i = 1; i < blocks.length; i++) {
+            const block = blocks[i];
+            
+            // Extract Link and Title
+            const linkMatch = block.match(/<a href="([^"]+)">([\s\S]*?)<\/a>/);
+            if (!linkMatch) continue;
 
-        while ((match = regex.exec(html)) !== null) {
-            let href = match[1];
-            let title = cleanTitle(match[2]);
+            let href = linkMatch[1];
+            let title = linkMatch[2].replace(/<\/?[^>]+(>|$)/g, "").replace(" Film", "").trim();
 
-            // Handle episode links vs series links
+            // Extract Image (looking into the associated general_box part)
+            // It looks for the first <img> tag inside the content_text area
+            const imgMatch = block.match(/<div class="content_text[^>]*>[\s\S]*?<img src="([^"]+)"/i);
+            let image = imgMatch ? imgMatch[1] : "";
+
+            // Fix relative paths
+            if (image && !image.startsWith('http')) image = `${BASE_URL}${image}`;
+            if (href && !href.startsWith('http')) href = `${BASE_URL}${href}`;
+
+            // Clean episode links back to series
             if (href.includes("-episode-")) {
                 const seriesMatch = href.match(/kinoger\.to\/(.+)-ep/);
                 if (seriesMatch) href = `${BASE_URL}/series/${seriesMatch[1]}`;
@@ -41,10 +60,11 @@ async function searchResults(keyword) {
 
             results.push({
                 title: title,
-                href: href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`,
-                image: "" 
+                href: href,
+                image: image
             });
         }
+
         return JSON.stringify(results);
     } catch (e) { 
         return JSON.stringify([]); 
