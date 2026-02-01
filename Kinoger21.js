@@ -163,11 +163,26 @@ async function loadLinks(data) {
         const results = [];
         if (!parsed.links) return JSON.stringify([]);
 
-        for (const link of parsed.links) {
-            // Sends the link to Sora's built-in hoster extractors
+        for (let link of parsed.links) {
+            link = link.trim();
+            
+            // 1. Resolve Kinoger.re/be hashes
+            // These hashes often resolve via a follow-up request or are handled by standard extractors
+            if (link.includes("kinoger.re/#") || link.includes("kinoger.be/#")) {
+                // If it's a hash, we treat it as a direct iframe link for the extractor
+                const extractorResult = await loadExtractor(link, BASE_URL + "/");
+                if (extractorResult) results.push(extractorResult);
+                continue;
+            }
+
+            // 2. Standard Hoster Extraction (Vidoza, Strmup, etc.)
+            // Sora's loadExtractor handles common hosts found in your HTML snippet
             const extractorResult = await loadExtractor(link, BASE_URL + "/");
-            if (extractorResult) results.push(extractorResult);
+            if (extractorResult) {
+                results.push(extractorResult);
+            }
         }
+        
         return JSON.stringify(results);
     } catch (e) { 
         return JSON.stringify([]); 
