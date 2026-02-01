@@ -1,9 +1,9 @@
 {
   "sourceName": "Kinoger",
-  "iconUrl": "https://kinoger.to/templates/kinoger/images/",
+  "iconUrl": "https://kinoger.to/templates/kinoger/images/logo.png",
   "author": {
     "name": "Community",
-    "icon": "logo.png"
+    "icon": "https://kinoger.to/templates/kinoger/images/logo.png"
   },
   "version": "1.0.2",
   "language": "German",
