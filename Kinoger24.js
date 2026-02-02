@@ -92,47 +92,70 @@ async function extractStreamUrl(urlData) {
         let results = [];
         let match;
 
-        // Iterate through ALL .show() matches (different hosters like VOE, VidHide, etc.)
         while ((match = showRegex.exec(html)) !== null) {
             try {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
                 
-                // Get the specific link for this season and episode
                 if (parsed[sIdx] && parsed[sIdx][eIdx]) {
-                    let mirror = parsed[sIdx][eIdx].trim();
+                    let mirror = parsed[sIdx][eIdx].trim().replace(/["']/g, "");
                     
-                    // Handle Kinoger.re (VidStack API)
+                    // HANDLE KINOGER.RE (THE TWO-STEP HANDSHAKE)
                     if (mirror.includes('kinoger.re/#')) {
                         const videoId = mirror.split('#')[1];
+                        
+                        // Step 1: Initial Video API call
                         const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
-                        const apiRes = await fetchv2(apiUrl, { headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' } });
+                        const apiRes = await fetchv2(apiUrl, { 
+                            headers: { 
+                                'Referer': mirror, 
+                                'X-Requested-With': 'XMLHttpRequest' 
+                            } 
+                        });
                         const apiData = await apiRes.text();
+
+                        // Step 2: Check for Player Token in API Response
+                        // Based on your logs, the direct HLS might be inside another token request
+                        const playerTokenMatch = apiData.match(/player\?t=([^"']+)/);
                         const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
                         
                         if (hlsMatch) {
-                            results.push({ "url": hlsMatch[1], "quality": "HLS: Kinoger.re", "headers": { "Referer": "https://kinoger.re" } });
+                            results.push({ 
+                                "url": hlsMatch[1].replace(/\\/g, ""), 
+                                "quality": "HLS: Kinoger.re", 
+                                "headers": { "Referer": "https://kinoger.re" } 
+                            });
+                        } else if (playerTokenMatch) {
+                            // If direct HLS isn't there, fetch the player endpoint using the token
+                            const playerUrl = `https://kinoger.re{playerTokenMatch[1]}`;
+                            const playerRes = await fetchv2(playerUrl, { headers: { 'Referer': mirror } });
+                            const playerData = await playerRes.text();
+                            const secondHlsMatch = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                            
+                            if (secondHlsMatch) {
+                                results.push({ 
+                                    "url": secondHlsMatch[1].replace(/\\/g, ""), 
+                                    "quality": "HLS: VidStack", 
+                                    "headers": { "Referer": "https://kinoger.re" } 
+                                });
+                            }
                         }
                     } 
-                    // Handle VOE Aliases
+                    // HANDLE ALIASES (VOE, VIDHIDE, VIDGUARD, P2P)
                     else if (mirror.includes('kinoger.ru')) {
                         results.push({ "url": mirror.replace('kinoger.ru', 'voe.sx'), "quality": "Mirror: VOE" });
                     }
-                    // Handle VidHide Aliases
                     else if (mirror.includes('kinoger.be')) {
                         results.push({ "url": mirror.replace('kinoger.be', 'vidhidepro.com'), "quality": "Mirror: VidHide" });
                     }
-                    // Handle VidGuard Aliases
                     else if (mirror.includes('kinoger.pw')) {
                         results.push({ "url": mirror.replace('kinoger.pw', 'vidguard.to'), "quality": "Mirror: Vidguard" });
                     }
-                    // Handle P2PPlay Aliases
                     else if (mirror.includes('p2pplay.pro')) {
                         results.push({ "url": mirror, "quality": "Mirror: P2PPlay", "headers": { "Referer": "https://kinoger.to" } });
                     }
-
                 }
-            } catch (e) { continue; }
+            } catch (e) { console.log("Inner loop error: " + e.message); }
         }
 
         return JSON.stringify(results);
