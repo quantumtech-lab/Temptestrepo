@@ -103,61 +103,37 @@ async function extractStreamUrl(url) {
         });
         const html = await response.text();
 
-        // 1. Extract mirrors
+        // 1. Get the iframe mirrors
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let mirrorLinks = [];
+        let mirrors = [];
         let match;
-
         while ((match = showRegex.exec(html)) !== null) {
             try {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
-                const link = parsed[epIndex]; 
-                if (link) mirrorLinks.push(link.trim());
+                if (parsed[epIndex]) mirrors.push(parsed[epIndex].trim());
             } catch (e) {}
         }
 
-        const finalSources = [];
+        if (mirrors.length === 0) return null;
 
-        // 2. Resolve mirrors using Sora's loadExtractor
-        for (let mirror of mirrorLinks) {
-            console.log('Sora is extracting: ' + mirror);
-            
-            // loadExtractor returns an array: [{ url: "...", quality: "..." }]
-            const extracted = await loadExtractor(mirror, BASE_URL + "/");
-            
-            if (extracted && Array.isArray(extracted)) {
-                extracted.forEach(source => {
-                    if (source.url) {
-                        finalSources.push({
-                            "url": source.url,
-                            "quality": source.quality || "HD",
-                            "headers": source.headers || { "Referer": mirror }
-                        });
-                    }
-                });
-            } else if (extracted && extracted.url) {
-                // Handle cases where it returns a single object instead of array
-                finalSources.push({
-                    "url": extracted.url,
-                    "quality": extracted.quality || "HD",
-                    "headers": extracted.headers || { "Referer": mirror }
-                });
-            }
-            
-            // If we found sources, stop and return them
-            if (finalSources.length > 0) break;
+        const results = [];
+        for (let mirror of mirrors) {
+            // We tell Sora to treat the mirror as the source
+            // BUT we add the Referer and User-Agent to bypass the 'click-to-load' check
+            results.push({
+                "url": mirror,
+                "quality": "HD",
+                "headers": {
+                    "Referer": pageUrl,
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                    "X-Requested-With": "XMLHttpRequest"
+                }
+            });
         }
 
-        if (finalSources.length === 0) return null;
-
-        // CRITICAL: Sora Swift Controller requires a JSON string of an ARRAY
-        const output = JSON.stringify(finalSources);
-        console.log('Stream Data for Sora: ' + output);
-        return output;
-
+        return JSON.stringify(results);
     } catch (e) {
-        console.log('Stream Extraction Error: ' + e.message);
         return null;
     }
 }
