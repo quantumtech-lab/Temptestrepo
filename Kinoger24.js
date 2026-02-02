@@ -81,68 +81,62 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(urlData) {
     try {
-        console.log("Processing href: " + urlData);
+        const [pageUrl, sPart, ePart] = urlData.split('|');
+        const sIdx = parseInt(sPart.split('=')[1]);
+        const eIdx = parseInt(ePart.split('=')[1]);
 
-        const parts = urlData.split('|');
-        if (parts.length < 3) throw new Error("Href split failed");
-
-        const pageUrl = parts[0];
-        // Fixed Indexing: parts[1] is "s=0", split('=')[1] is "0"
-        const sIdx = parseInt(parts[1].split('=')[1]);
-        const eIdx = parseInt(parts[2].split('=')[1]);
-
-        // Sora fetchv2 requires the headers key
-        const response = await fetchv2(pageUrl, { 
-            method: 'GET',
-            headers: { 'Referer': 'https://kinoger.to' } 
-        });
-        
+        const response = await fetchv2(pageUrl, { 'Referer': 'https://kinoger.to' });
         const html = await response.text();
-        if (!html) throw new Error("Empty HTML response");
-
+        
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let results = [];
         let match;
 
+        // Iterate through ALL .show() matches (different hosters like VOE, VidHide, etc.)
         while ((match = showRegex.exec(html)) !== null) {
             try {
-                const cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+                let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
                 
+                // Get the specific link for this season and episode
                 if (parsed[sIdx] && parsed[sIdx][eIdx]) {
-                    let mirror = parsed[sIdx][eIdx].trim().replace(/["']/g, "");
+                    let mirror = parsed[sIdx][eIdx].trim();
                     
+                    // Handle Kinoger.re (VidStack API)
                     if (mirror.includes('kinoger.re/#')) {
                         const videoId = mirror.split('#')[1];
                         const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
-
-                        const apiRes = await fetchv2(apiUrl, {
-                            headers: { 
-                                'Referer': mirror, 
-                                'X-Requested-With': 'XMLHttpRequest' 
-                            }
-                        });
-                        
+                        const apiRes = await fetchv2(apiUrl, { headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' } });
                         const apiData = await apiRes.text();
                         const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
                         
-                        if (hlsMatch && hlsMatch[1]) {
-                            results.push({
-                                "url": hlsMatch[1].replace(/\\/g, ""), 
-                                "quality": "Kinoger HLS",
-                                "headers": { "Referer": "https://kinoger.re" }
-                            });
+                        if (hlsMatch) {
+                            results.push({ "url": hlsMatch[1], "quality": "HLS: Kinoger.re", "headers": { "Referer": "https://kinoger.re" } });
                         }
-                    } else if (mirror.includes('kinoger.ru')) {
-                        results.push({ "url": mirror.replace('kinoger.ru', 'voe.sx'), "quality": "VOE" });
+                    } 
+                    // Handle VOE Aliases
+                    else if (mirror.includes('kinoger.ru')) {
+                        results.push({ "url": mirror.replace('kinoger.ru', 'voe.sx'), "quality": "Mirror: VOE" });
                     }
+                    // Handle VidHide Aliases
+                    else if (mirror.includes('kinoger.be')) {
+                        results.push({ "url": mirror.replace('kinoger.be', 'vidhidepro.com'), "quality": "Mirror: VidHide" });
+                    }
+                    // Handle VidGuard Aliases
+                    else if (mirror.includes('kinoger.pw')) {
+                        results.push({ "url": mirror.replace('kinoger.pw', 'vidguard.to'), "quality": "Mirror: Vidguard" });
+                    }
+                    // Handle P2PPlay Aliases
+                    else if (mirror.includes('p2pplay.pro')) {
+                        results.push({ "url": mirror, "quality": "Mirror: P2PPlay", "headers": { "Referer": "https://kinoger.to" } });
+                    }
+
                 }
             } catch (e) { continue; }
         }
 
         return JSON.stringify(results);
     } catch (e) {
-        console.log("Extraction Error: " + e.message);
         return JSON.stringify([]);
     }
 }
