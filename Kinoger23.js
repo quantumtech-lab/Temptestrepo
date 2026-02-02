@@ -32,56 +32,30 @@ async function extractDetails(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
 
-        // Use a simpler regex to avoid empty captures
-        const metaMatch = html.match(/class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
-        let description = "";
-        let airdate = "Unknown";
-
-        if (metaMatch && metaMatch[1]) {
-            // Clean the HTML tags and special spans
-            // 1. Remove the S19E01-08 indicator specifically
-// This matches "S" followed by digits, "E", digits, and optional ranges
-            let clean = metaMatch[1]
-                .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
-                .replace(/S\d+E\d+(-\d+)?/g, "") // Removes indicators like S19E01-08
-                .replace(/<[^>]*>/g, " ")
-                .replace(/[\r\n\t]+/g, " ")
+        // 1. ANCHOR: Look for the closing </div> of the 'text-align:right' container
+        // Capture everything after it until the first <br><br>
+        const descriptionMatch = html.match(/text-align:\s*right;?["'][^>]*>[\s\S]*?<\/div>([\s\S]*?)<br><br>/i);
+        
+        let description = "No description available";
+        if (descriptionMatch && descriptionMatch[1]) {
+            description = descriptionMatch[1]
+                .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "") // Remove spans
+                .replace(/<[^>]*>/g, "") // Remove any other HTML
+                .replace(/[\r\n\t]+/g, " ") // Clean whitespace
                 .trim();
-            
-            // 2. Extract plot
-            description = clean.split('Sprache:')[0].trim();
-            
-            // 3. Extract airdate: Match until the next label or tag (Genres:)
-            // This regex captures everything after "Erstausstrahlung:" until it hits "Genres:"
-            const dateMatch = clean.match(/Erstausstrahlung:\s*(.*?)(?=\s*Genres:|$)/i);
-            airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
         }
 
-        // WRAP IN ARRAY: The logs confirm Sora is looking for Optional([])
+        // 2. Return as Array of One Object (For Sora iOS stability)
         const result = [{
-            "description": description || "No description available",
-            "airdate": airdate,
-            "aliases": "Kinoger HD+"
+            "description": description.replace(/"/g, "'"),
+            "airdate": "Kinoger", 
+            "aliases": "HD Stream"
         }];
 
-        const jsonOutput = JSON.stringify(result);
-        console.log('Returning Details: ' + jsonOutput);
-        return jsonOutput;
+        return JSON.stringify(result);
 
-    } catch (error) {
-        console.log('Details Error: ' + error.message);
-        return JSON.stringify([{ "description": "Error", "aliases": "", "airdate": "" }]);
-    }
-}
-
-        // Return the exact JSON object structure required by Sora
-        return JSON.stringify({
-            "description": description.replace(/"/g, "'"), // Escape double quotes
-            "airdate": airdate,
-            "aliases": "Kinoger HD+"
-        });
     } catch (e) {
-        return JSON.stringify({ "description": "Error loading details" });
+        return JSON.stringify([{ "description": "Error: " + e.message }]);
     }
 }
 
