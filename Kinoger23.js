@@ -65,42 +65,28 @@ async function extractEpisodes(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
         
-        // Match the main poster for episode thumbnails
-        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
-        const poster = posterMatch ? (posterMatch[1].startsWith('http') ? posterMatch[1] : BASE_URL + posterMatch[1]) : "";
-
-        // Specifically targeting the .show array from your HTML snippets
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let match = showRegex.exec(html); 
-        
-        if (!match || !match[1]) return JSON.stringify([]);
+        if (!match) return JSON.stringify([]);
 
-        // Parse the inner array from the .show() function
         let rawArrayString = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
         const providerArray = JSON.parse(rawArrayString);
-        const episodeLinks = providerArray[0]; // Access the nested list of links
+        const episodeLinks = providerArray[0]; 
 
-        
-        const episodes = episodeLinks.map((linkData, index) => {
-            // linkData is likely the string "1 Episode" or similar
-            const rawLabel = linkData.toString(); 
-            
-            // Extract only the digits from the start of the string (e.g., "1" from "1 Episode")
-            const matchNumber = rawLabel.match(/^\d+/);
-            const displayNum = matchNumber ? matchNumber[0] : (index + 1).toString();
-        
+        const episodes = episodeLinks.map((_, index) => {
+            const displayNum = index + 1;
             return {
-                "href": url + "|episode=" + index, // Keep index for href if that's how your player finds it
-                "number": displayNum,
-                "image": poster
+                "href": url + "|episode=" + index,
+                "number": displayNum,          // Send as Integer
+                "title": "Episode " + displayNum // Force the UI label
             };
         });
 
-        console.log("Successfully extracted " + episodes.length + " episodes starting from 1");
+        console.log("Extracted " + episodes.length + " episodes for UI.");
         return JSON.stringify(episodes);
 
     } catch (e) {
-        console.log("Episodes Error: " + e.message);
+        console.log("Episodes Logic Error: " + e.message);
         return JSON.stringify([]);
     }
 }
