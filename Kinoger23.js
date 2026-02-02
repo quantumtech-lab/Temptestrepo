@@ -70,34 +70,30 @@ async function extractEpisodes(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
         
-        // Get the main poster to use for episode thumbnails
-        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
+        // Image extraction from your HTML (inside images-border)
+        const posterMatch = html.match(/<div class="images-border">[\s\S]*?src="([^"]+)"/i);
         const poster = posterMatch ? (posterMatch[1].startsWith('http') ? posterMatch[1] : BASE_URL + posterMatch[1]) : "";
 
+        // Extracting episodes from the pw.show/fsst.show arrays
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let allLinks = [];
-        let match;
+        let match = showRegex.exec(html); 
+        
+        if (!match) return JSON.stringify([]);
 
-        while ((match = showRegex.exec(html)) !== null) {
-            try {
-                let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
-                const parsed = JSON.parse(cleanJson);
-                if (Array.isArray(parsed)) allLinks.push(parsed);
-            } catch (e) {}
-        }
+        // Parse the first provider found (usually pw.show)
+        let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const providerArray = JSON.parse(cleanJson)[0]; // Your HTML is [[ep1, ep2...]]
 
-        if (allLinks.length === 0) return JSON.stringify([]);
-
-        const provider = allLinks[0][0]; // Target the first list of links
-        const episodes = provider.map((_, index) => ({
-            // number + 1 ensures we don't start at "Episode 0"
-            number: (index + 1).toString(),
+        const episodes = providerArray.map((_, index) => ({
+            number: (index + 1).toString(), // Fixes Episode 0
             href: `${url}|episode=${index}`,
-            image: poster // This ensures each episode has a thumbnail
+            image: poster // Applies the show's poster to each episode
         }));
 
         return JSON.stringify(episodes);
-    } catch (e) { return JSON.stringify([]); }
+    } catch (e) {
+        return JSON.stringify([]);
+    }
 }
 
 // 4. STREAM URL FUNCTION
