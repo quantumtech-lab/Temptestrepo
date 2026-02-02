@@ -64,34 +64,44 @@ async function extractEpisodes(url) {
     try {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
-        
-        // 1. Extract the main poster once
-        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
-        const posterUrl = posterMatch ? (posterMatch.startsWith('http') ? posterMatch : BASE_URL + posterMatch) : "";
 
-        // 2. Extract episodes from your HTML snippet's .show() calls
-        const showRegex = /\.show\(\s*\d+,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let match = showRegex.exec(html); 
-        
-        if (!match) return JSON.stringify([]);
+        // 1. Target the .show pattern from your HTML
+        // Capture the content inside the parentheses: .show(1, [[...]])
+        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        let match = showRegex.exec(html);
 
-        // Get the inner array of URLs from the first provider
-        const rawArray = match.replace(/'/g, '"').replace(/,\s*\]/g, ']');
-        const episodeUrls = JSON.parse(rawArray);
+        if (!match || !match[1]) {
+            console.log("Regex failed to find .show array");
+            return JSON.stringify([]);
+        }
 
-        // 3. Map to episodes with correct numbering and image
-        const episodes = episodeUrls.map((_, index) => ({
-            "number": (index + 1).toString(), // FIX: Starts numbers from 1, not 0
-            "name": `Episode ${index + 1}`,   // FIX: Adds a title
-            "href": `${url}|episode=${index}`, // Pass original URL + index marker
-            "image": posterUrl                // FIX: Add the show poster here
-        }));
+        // 2. Parse the JS array into a JSON object
+        let rawArrayString = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const providerArray = JSON.parse(rawArrayString);
         
-        console.log('Returning episodes list');
+        // Access the inner array [[...]] -> [...]
+        const episodeLinks = providerArray[0]; 
+
+        if (!Array.isArray(episodeLinks)) {
+            console.log("Parsed data is not an array");
+            return JSON.stringify([]);
+        }
+
+        // 3. Map to Episode objects
+        const episodes = episodeLinks.map((_, index) => {
+            const displayNum = (index + 1).toString();
+            return {
+                "number": displayNum,
+                "name": "Episode " + displayNum,
+                "href": url + "|episode=" + index
+            };
+        });
+
+        console.log("Successfully extracted " + episodes.length + " episodes");
         return JSON.stringify(episodes);
 
     } catch (e) {
-        console.log('Episodes Error: ' + e.message);
+        console.log("Episodes Logic Error: " + e.message);
         return JSON.stringify([]);
     }
 }
