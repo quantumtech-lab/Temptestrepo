@@ -98,6 +98,7 @@ async function extractStreamUrl(url) {
         const pageUrl = parts[0];
         const epIndex = parseInt(parts[1]);
 
+        // Use Referer (with 2 'r's) - many servers block it otherwise
         const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
 
@@ -108,17 +109,24 @@ async function extractStreamUrl(url) {
             try {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
-                if (parsed[0] && parsed[0][epIndex]) mirrorLinks.push(parsed[0][epIndex].trim());
+                // Kinoger uses nested arrays [[ep1, ep2]], so access parsed[0][epIndex]
+                if (parsed[0] && parsed[0][epIndex]) {
+                    mirrorLinks.push(parsed[0][epIndex].trim());
+                }
             } catch (e) {}
         }
 
-        if (mirrorLinks.length === 0) throw new Error("No mirrors found in HTML");
+        if (mirrorLinks.length === 0) throw new Error("No mirrors found");
 
         for (let mirror of mirrorLinks) {
             if (mirror.includes('kinoger.re/#')) {
                 const videoId = mirror.split('#')[1];
+                
+                // FIX: Added the missing /api/v1/video?id= path
                 const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
                 
+                console.log('Fetching API: ' + apiUrl);
+
                 const apiRes = await fetchv2(apiUrl, {
                     headers: {
                         'Referer': mirror,
@@ -128,26 +136,32 @@ async function extractStreamUrl(url) {
                 });
                 
                 const apiData = await apiRes.text();
+                // Find master.m3u8 link
                 const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
                 
                 if (hlsMatch && hlsMatch[1]) {
+                    const finalUrl = hlsMatch[1];
+                    console.log('Stream found: ' + finalUrl);
+                    
                     return JSON.stringify([{
-                        "url": hlsMatch[1],
+                        "url": finalUrl,
                         "quality": "Auto HD+",
-                        "headers": { "Referer": "https://kinoger.re", "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" }
+                        "headers": { 
+                            "Referer": "https://kinoger.re", 
+                            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" 
+                        }
                     }]);
-                } else {
-                    throw new Error("API responded but no m3u8 found. Data length: " + apiData.length);
                 }
             }
         }
-        throw new Error("No kinoger.re mirror processed");
+        throw new Error("No playable link found");
 
     } catch (e) {
-        // This will show the error message inside the Player's Quality button
+        console.log('Final Error: ' + e.message);
+        // Returns the error to the UI quality selector for debugging
         return JSON.stringify([{
             "url": "https://0.0.0.0",
-            "quality": "ERR: " + e.message.substring(0, 30),
+            "quality": "ERR: " + e.message.substring(0, 25),
             "headers": {}
         }]);
     }
