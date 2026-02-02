@@ -59,28 +59,39 @@ async function extractDetails(url) {
     }
 }
 
+// 3. EPISODES FUNCTION
 async function extractEpisodes(url) {
     try {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
         
-        // Match the script arrays from your snippets
-        const showRegex = /\.show\(\d+,\s*(\[\[[\s\S]*?\]\])\)/g;
-        let match = showRegex.exec(html);
+        // 1. Extract the main poster once
+        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
+        const posterUrl = posterMatch ? (posterMatch.startsWith('http') ? posterMatch : BASE_URL + posterMatch) : "";
+
+        // 2. Extract episodes from your HTML snippet's .show() calls
+        const showRegex = /\.show\(\s*\d+,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        let match = showRegex.exec(html); 
+        
         if (!match) return JSON.stringify([]);
 
-        let rawArray = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
-        const data = JSON.parse(rawArray);
-        const episodeUrls = data[0]; // Access the inner array of URLs
+        // Get the inner array of URLs from the first provider
+        const rawArray = match.replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const episodeUrls = JSON.parse(rawArray);
 
+        // 3. Map to episodes with correct numbering and image
         const episodes = episodeUrls.map((_, index) => ({
-            "number": (index + 1).toString(), // Prevents Episode 0
-            "href": `${url}|episode=${index}`,
-            "image": "" // You can add poster logic here if needed
+            "number": (index + 1).toString(), // FIX: Starts numbers from 1, not 0
+            "name": `Episode ${index + 1}`,   // FIX: Adds a title
+            "href": `${url}|episode=${index}`, // Pass original URL + index marker
+            "image": posterUrl                // FIX: Add the show poster here
         }));
-
+        
+        console.log('Returning episodes list');
         return JSON.stringify(episodes);
+
     } catch (e) {
+        console.log('Episodes Error: ' + e.message);
         return JSON.stringify([]);
     }
 }
