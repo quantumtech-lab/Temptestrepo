@@ -32,35 +32,34 @@ async function extractDetails(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
 
-        // Target the images-border div where you said everything is located
         const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
         let description = "No description available";
         let airdate = "Unknown";
 
-        if (metaBlock) {
-            let content = metaBlock[1];
-            // Remove the S19E01-08 indicator and the image end tags
-            content = content.replace(/<b>[\s\S]*?<\/b>/g, "");
-            content = content.replace(/<!--[\s\S]*?-->/g, "");
-            // Remove the masha_index spans
-            content = content.replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "");
+        if (metaBlock && metaBlock[1]) {
+            let content = metaBlock[1]
+                .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
+                .replace(/<!--[\s\S]*?-->/g, "");
             
-            // Extract the first paragraph as description
-            description = content.replace(/<[^>]*>/g, "").split('Sprache:')[0].trim();
+            // Clean the text and remove problematic characters like \n or \r
+            let cleanText = content.replace(/<[^>]*>/g, " ").replace(/[\r\n\t]+/g, " ").trim();
             
-            // Extract Airdate from the "Erstausstrahlung" line in your HTML
-            const dateMatch = content.match(/Erstausstrahlung:\s*([^<]+)/i);
+            description = cleanText.split('Sprache:')[0].trim();
+            
+            const dateMatch = cleanText.match(/Erstausstrahlung:\s*([^ ]+)/i);
             airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
         }
 
-        // Return as a single JSON object for Sora Async Mode
-        return JSON.stringify({
-            description: description,
+        // Return a single object (per Sora Docs) but ensure string safety
+        const result = {
+            description: description.replace(/"/g, '\\"'), // Escape quotes
             airdate: airdate,
             aliases: "Kinoger HD+"
-        });
+        };
+
+        return JSON.stringify(result);
     } catch (e) {
-        return JSON.stringify({ description: "Error loading details" });
+        return JSON.stringify({ description: "Error" });
     }
 }
 
@@ -70,24 +69,26 @@ async function extractEpisodes(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
         
-        // Image extraction from your HTML (inside images-border)
-        const posterMatch = html.match(/<div class="images-border">[\s\S]*?src="([^"]+)"/i);
+        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
         const poster = posterMatch ? (posterMatch[1].startsWith('http') ? posterMatch[1] : BASE_URL + posterMatch[1]) : "";
 
-        // Extracting episodes from the pw.show/fsst.show arrays
+        // Specifically targeting the nested arrays in your HTML
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let match = showRegex.exec(html); 
         
-        if (!match) return JSON.stringify([]);
+        if (!match || !match[1]) return JSON.stringify([]);
 
-        // Parse the first provider found (usually pw.show)
-        let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
-        const providerArray = JSON.parse(cleanJson)[0]; // Your HTML is [[ep1, ep2...]]
+        // Clean the JS array string so JSON.parse won't crash
+        let rawArrayString = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const providerArray = JSON.parse(rawArrayString);
+        
+        // Your HTML structure is [[ep1, ep2...]] so we use [0]
+        const episodeList = providerArray[0];
 
-        const episodes = providerArray.map((_, index) => ({
-            number: (index + 1).toString(), // Fixes Episode 0
+        const episodes = episodeList.map((_, index) => ({
+            number: (index + 1).toString(),
             href: `${url}|episode=${index}`,
-            image: poster // Applies the show's poster to each episode
+            image: poster 
         }));
 
         return JSON.stringify(episodes);
