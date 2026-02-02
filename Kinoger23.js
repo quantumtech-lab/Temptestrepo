@@ -32,20 +32,35 @@ async function extractDetails(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
 
-        const descMatch = html.match(/<div class="images-border">([\s\S]*?)<\/div>/i);
-        // Clean description of HTML tags and "masha_index" spans
-        const description = descMatch ? descMatch[1].replace(/<[^>]*>/g, "").trim() : "No description available";
-        
-        const yearMatch = html.match(/\((\d{4})\)/);
+        // Target the images-border div where you said everything is located
+        const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
+        let description = "No description available";
+        let airdate = "Unknown";
 
-        // ASYNC MODE FIX: Return a single OBJECT, not an array
+        if (metaBlock) {
+            let content = metaBlock[1];
+            // Remove the S19E01-08 indicator and the image end tags
+            content = content.replace(/<b>[\s\S]*?<\/b>/g, "");
+            content = content.replace(/<!--[\s\S]*?-->/g, "");
+            // Remove the masha_index spans
+            content = content.replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "");
+            
+            // Extract the first paragraph as description
+            description = content.replace(/<[^>]*>/g, "").split('Sprache:')[0].trim();
+            
+            // Extract Airdate from the "Erstausstrahlung" line in your HTML
+            const dateMatch = content.match(/Erstausstrahlung:\s*([^<]+)/i);
+            airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
+        }
+
+        // Return as a single JSON object for Sora Async Mode
         return JSON.stringify({
             description: description,
-            aliases: "Kinoger Stream",
-            airdate: yearMatch ? yearMatch[1] : "Unknown"
+            airdate: airdate,
+            aliases: "Kinoger HD+"
         });
-    } catch (e) { 
-        return JSON.stringify({ description: "Error loading details" }); 
+    } catch (e) {
+        return JSON.stringify({ description: "Error loading details" });
     }
 }
 
