@@ -29,13 +29,14 @@ async function searchResults(keyword) {
 // 2. DETAILS FUNCTION
 async function extractDetails(url) {
     try {
+        console.log('Fetching details for URL: ' + url);
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
-
-        // Target the metadata block you identified
-        const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
         
-        // Default values
+        // Log a snippet of HTML to verify it's loading correctly
+        console.log('HTML received, length: ' + html.length);
+
+        const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
         let description = "No description available";
         let airdate = "Unknown";
 
@@ -44,33 +45,28 @@ async function extractDetails(url) {
                 .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
                 .replace(/<!--[\s\S]*?-->/g, "");
             
-            // CRITICAL: Remove all newlines, tabs, and unescaped quotes which break JSON
+            // Clean text for JSON safety
             let cleanText = content.replace(/<[^>]*>/g, " ").replace(/[\r\n\t]+/g, " ").trim();
-            
-            // Extracting description before "Sprache:"
             description = cleanText.split('Sprache:')[0].trim();
             
-            // Extracting date after "Erstausstrahlung:"
             const dateMatch = cleanText.match(/Erstausstrahlung:\s*([^ ]+)/i);
             airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
         }
 
-        // Return a SINGLE OBJECT (not an array) to match Sora Async requirements
-        const finalObj = {
-            "description": description.replace(/"/g, "'"), // Swap double to single quotes for safety
-            "airdate": airdate.replace(/"/g, ""),
-            "aliases": "Kinoger Stream"
+        // ASYNC MODE REQUIREMENT: Return a single JSON Object string
+        const result = {
+            "description": description.replace(/"/g, "'"),
+            "aliases": "Kinoger HD+",
+            "airdate": airdate
         };
 
-        return JSON.stringify(finalObj);
+        console.log('Returning Details: ' + JSON.stringify(result));
+        return JSON.stringify(result);
 
-    } catch (e) {
-        // This "logs" the error message to your Sora app's description area
-        return JSON.stringify({
-            "description": "DEBUG ERROR: " + e.message,
-            "airdate": "Error",
-            "aliases": "Error"
-        });
+    } catch (error) {
+        console.log('Details Error: ' + error.message);
+        // Fallback object so the app doesn't hang
+        return JSON.stringify({ "description": "Error: " + error.message, "aliases": "", "airdate": "" });
     }
 }
 
