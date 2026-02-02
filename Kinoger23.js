@@ -103,9 +103,9 @@ async function extractStreamUrl(url) {
         });
         const html = await response.text();
 
-        // 1. Get mirrors for this specific episode
+        // 1. Extract mirrors
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let mirrors = [];
+        let mirrorLinks = [];
         let match;
 
         while ((match = showRegex.exec(html)) !== null) {
@@ -113,28 +113,49 @@ async function extractStreamUrl(url) {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
                 const link = parsed[epIndex]; 
-                if (link) mirrors.push(link.trim());
+                if (link) mirrorLinks.push(link.trim());
             } catch (e) {}
         }
 
-        if (mirrors.length === 0) return null;
+        const finalSources = [];
 
-        // 2. Resolve mirrors using Sora's extractor
-        for (let mirror of mirrors) {
-            console.log('Attempting to extract: ' + mirror);
+        // 2. Resolve mirrors using Sora's loadExtractor
+        for (let mirror of mirrorLinks) {
+            console.log('Sora is extracting: ' + mirror);
             
-            // IMPORTANT: loadExtractor returns an ARRAY of sources
-            const extractedSources = await loadExtractor(mirror, BASE_URL + "/");
+            // loadExtractor returns an array: [{ url: "...", quality: "..." }]
+            const extracted = await loadExtractor(mirror, BASE_URL + "/");
             
-            if (extractedSources && extractedSources.length > 0) {
-                // If the extractor found multiple qualities, we return the first direct URL
-                const directUrl = extractedSources[0].url;
-                console.log('Extracted direct stream: ' + directUrl);
-                return directUrl; 
+            if (extracted && Array.isArray(extracted)) {
+                extracted.forEach(source => {
+                    if (source.url) {
+                        finalSources.push({
+                            "url": source.url,
+                            "quality": source.quality || "HD",
+                            "headers": source.headers || { "Referer": mirror }
+                        });
+                    }
+                });
+            } else if (extracted && extracted.url) {
+                // Handle cases where it returns a single object instead of array
+                finalSources.push({
+                    "url": extracted.url,
+                    "quality": extracted.quality || "HD",
+                    "headers": extracted.headers || { "Referer": mirror }
+                });
             }
+            
+            // If we found sources, stop and return them
+            if (finalSources.length > 0) break;
         }
 
-        return null; // No playable stream found in any mirror
+        if (finalSources.length === 0) return null;
+
+        // CRITICAL: Sora Swift Controller requires a JSON string of an ARRAY
+        const output = JSON.stringify(finalSources);
+        console.log('Stream Data for Sora: ' + output);
+        return output;
+
     } catch (e) {
         console.log('Stream Extraction Error: ' + e.message);
         return null;
