@@ -32,8 +32,6 @@ async function extractDetails(url) {
         console.log('Fetching details for URL: ' + url);
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
-        
-        // Log a snippet of HTML to verify it's loading correctly
         console.log('HTML received, length: ' + html.length);
 
         const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
@@ -45,28 +43,30 @@ async function extractDetails(url) {
                 .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
                 .replace(/<!--[\s\S]*?-->/g, "");
             
-            // Clean text for JSON safety
             let cleanText = content.replace(/<[^>]*>/g, " ").replace(/[\r\n\t]+/g, " ").trim();
-            description = cleanText.split('Sprache:')[0].trim();
+            
+            // Fix: Capture everything AFTER the episode count (S19E01-08)
+            const descParts = cleanText.split(/S\d+E\d+-\s*\d+/i);
+            description = descParts.length > 1 ? descParts[1].split('Sprache:')[0].trim() : cleanText;
             
             const dateMatch = cleanText.match(/Erstausstrahlung:\s*([^ ]+)/i);
             airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
         }
 
-        // ASYNC MODE REQUIREMENT: Return a single JSON Object string
+        // ASYNC MODE FIX: Ensure valid JSON with commas
         const result = {
             "description": description.replace(/"/g, "'"),
             "aliases": "Kinoger HD+",
             "airdate": airdate
         };
 
-        console.log('Returning Details: ' + JSON.stringify(result));
-        return JSON.stringify(result);
+        const jsonOutput = JSON.stringify(result);
+        console.log('Returning Details: ' + jsonOutput);
+        return jsonOutput;
 
     } catch (error) {
         console.log('Details Error: ' + error.message);
-        // Fallback object so the app doesn't hang
-        return JSON.stringify({ "description": "Error: " + error.message, "aliases": "", "airdate": "" });
+        return JSON.stringify({ "description": "Error", "aliases": "", "airdate": "" });
     }
 }
 
