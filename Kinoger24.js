@@ -81,21 +81,25 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(urlData) {
     try {
-        // Log for your internal Sora debugging
         console.log("Processing href: " + urlData);
 
         const parts = urlData.split('|');
-        if (parts.length < 3) throw new Error("Invalid href format");
+        if (parts.length < 3) throw new Error("Href split failed");
 
         const pageUrl = parts[0];
-        // Correctly extract the number after the '='
+        // Fixed Indexing: parts[1] is "s=0", split('=')[1] is "0"
         const sIdx = parseInt(parts[1].split('=')[1]);
         const eIdx = parseInt(parts[2].split('=')[1]);
 
-        const response = await fetchv2(pageUrl, { 'Referer': 'https://kinoger.to' });
-        const html = await response.text();
+        // Sora fetchv2 requires the headers key
+        const response = await fetchv2(pageUrl, { 
+            method: 'GET',
+            headers: { 'Referer': 'https://kinoger.to' } 
+        });
         
-        // Kinoger stores mirrors in multiple .show() calls
+        const html = await response.text();
+        if (!html) throw new Error("Empty HTML response");
+
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let results = [];
         let match;
@@ -108,13 +112,15 @@ async function extractStreamUrl(urlData) {
                 if (parsed[sIdx] && parsed[sIdx][eIdx]) {
                     let mirror = parsed[sIdx][eIdx].trim().replace(/["']/g, "");
                     
-                    // Mirror 1: Kinoger.re (VidStack API)
                     if (mirror.includes('kinoger.re/#')) {
                         const videoId = mirror.split('#')[1];
                         const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
 
                         const apiRes = await fetchv2(apiUrl, {
-                            headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' }
+                            headers: { 
+                                'Referer': mirror, 
+                                'X-Requested-With': 'XMLHttpRequest' 
+                            }
                         });
                         
                         const apiData = await apiRes.text();
@@ -127,27 +133,16 @@ async function extractStreamUrl(urlData) {
                                 "headers": { "Referer": "https://kinoger.re" }
                             });
                         }
-                    } 
-                    // Mirror 2: VOE
-                    else if (mirror.includes('kinoger.ru')) {
-                        results.push({ "url": mirror.replace('kinoger.ru', 'voe.sx'), "quality": "Mirror: VOE" });
-                    }
-                    // Mirror 3: VidHide
-                    else if (mirror.includes('kinoger.be')) {
-                        results.push({ "url": mirror.replace('kinoger.be', 'vidhidepro.com'), "quality": "Mirror: VidHide" });
+                    } else if (mirror.includes('kinoger.ru')) {
+                        results.push({ "url": mirror.replace('kinoger.ru', 'voe.sx'), "quality": "VOE" });
                     }
                 }
-            } catch (innerError) { continue; }
-        }
-
-        if (results.length === 0) {
-            console.log("No streamable mirrors extracted from HTML.");
+            } catch (e) { continue; }
         }
 
         return JSON.stringify(results);
-
     } catch (e) {
-        console.log("Stream Extraction Failed: " + e.message);
+        console.log("Extraction Error: " + e.message);
         return JSON.stringify([]);
     }
 }
