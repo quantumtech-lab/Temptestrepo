@@ -64,44 +64,36 @@ async function extractEpisodes(url) {
     try {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
+        
+        // Match the main poster for episode thumbnails
+        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
+        const poster = posterMatch ? (posterMatch[1].startsWith('http') ? posterMatch[1] : BASE_URL + posterMatch[1]) : "";
 
-        // 1. Target the .show pattern from your HTML
-        // Capture the content inside the parentheses: .show(1, [[...]])
+        // Specifically targeting the .show array from your HTML snippets
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let match = showRegex.exec(html);
+        let match = showRegex.exec(html); 
+        
+        if (!match || !match[1]) return JSON.stringify([]);
 
-        if (!match || !match[1]) {
-            console.log("Regex failed to find .show array");
-            return JSON.stringify([]);
-        }
-
-        // 2. Parse the JS array into a JSON object
+        // Parse the inner array from the .show() function
         let rawArrayString = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
         const providerArray = JSON.parse(rawArrayString);
-        
-        // Access the inner array [[...]] -> [...]
-        const episodeLinks = providerArray[0]; 
+        const episodeLinks = providerArray[0]; // Access the nested list of links
 
-        if (!Array.isArray(episodeLinks)) {
-            console.log("Parsed data is not an array");
-            return JSON.stringify([]);
-        }
-
-        // 3. Map to Episode objects
         const episodes = episodeLinks.map((_, index) => {
-            const displayNum = (index + 1).toString();
+            const displayNum = (index + 1).toString(); // FIX: Ensures numbering starts at 1
             return {
+                "href": url + "|episode=" + index,
                 "number": displayNum,
-                "name": "Episode " + displayNum,
-                "href": url + "|episode=" + index
+                "image": poster // FIX: Adds the poster image to each episode
             };
         });
 
-        console.log("Successfully extracted " + episodes.length + " episodes");
+        console.log("Successfully extracted " + episodes.length + " episodes starting from 1");
         return JSON.stringify(episodes);
 
     } catch (e) {
-        console.log("Episodes Logic Error: " + e.message);
+        console.log("Episodes Error: " + e.message);
         return JSON.stringify([]);
     }
 }
