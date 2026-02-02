@@ -97,13 +97,9 @@ async function extractStreamUrl(url) {
         const [pageUrl, epMarker] = url.split('|episode=');
         const epIndex = parseInt(epMarker);
 
-        const response = await fetchv2(pageUrl, { 
-            headers: { 'Referer': 'https://kinoger.to' },
-            redirect: 'follow' 
-        });
+        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
 
-        // 1. Get the raw mirror links for the episode
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrorLinks = [];
         let match;
@@ -115,43 +111,36 @@ async function extractStreamUrl(url) {
             } catch (e) {}
         }
 
-        if (mirrorLinks.length === 0) return null;
-
-        // 2. Resolve mirrors to direct stream URLs
-        const finalSources = [];
-        for (const mirror of mirrorLinks) {
-            const extracted = await loadExtractor(mirror, pageUrl);
+        for (let mirror of mirrorLinks) {
+            console.log('Handshaking with: ' + mirror);
             
-            // loadExtractor returns an array of {url, quality, headers}
-            if (extracted && Array.isArray(extracted)) {
-                extracted.forEach(src => {
-                    if (src.url) {
-                        finalSources.push({
-                            "url": src.url,
-                            "quality": src.quality || "HD",
-                            "headers": src.headers || { "Referer": mirror }
-                        });
+            // 1. Fetch the mirror page itself
+            const mirrorRes = await fetchv2(mirror, { headers: { 'Referer': pageUrl } });
+            const mirrorHtml = await mirrorRes.text();
+
+            // 2. Look for the direct .m3u8 that the JS would normally inject
+            // In the HTML you sent, it was: https://kinoger.re
+            const hlsMatch = mirrorHtml.match(/src="([^"]+master\.m3u8[^"]+)"/i) || 
+                             mirrorHtml.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+
+            if (hlsMatch) {
+                const finalUrl = hlsMatch[1];
+                console.log('Found Direct HLS: ' + finalUrl);
+
+                // 3. Return the JSON array Sora's Swift controller requires
+                return JSON.stringify([{
+                    "url": finalUrl,
+                    "quality": "HD",
+                    "headers": {
+                        "Referer": mirror,
+                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
                     }
-                });
-            } else if (extracted && extracted.url) {
-                finalSources.push({
-                    "url": extracted.url,
-                    "quality": extracted.quality || "HD",
-                    "headers": extracted.headers || { "Referer": mirror }
-                });
+                }]);
             }
-            if (finalSources.length > 0) break;
         }
-
-        if (finalSources.length === 0) return null;
-
-        // 3. FIX: Return JSON string of the ARRAY (for Swift [StreamSource])
-        const output = JSON.stringify(finalSources);
-        console.log('Final Stream Data: ' + output);
-        return output;
-
+        return null;
     } catch (e) {
-        console.log('Stream Error: ' + e.message);
+        console.log('Handshake Error: ' + e.message);
         return null;
     }
 }
