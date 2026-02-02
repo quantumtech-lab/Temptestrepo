@@ -98,65 +98,69 @@ async function extractStreamUrl(url) {
         const pageUrl = parts[0];
         const epIndex = parseInt(parts[1]);
 
+        // 1. Get the HTML to find the mirror hash
         const response = await fetchv2(pageUrl, { 
-            headers: { 'Referer': 'https://kinoger.to' },
-            redirect: 'follow' 
+            headers: { 'Referer': 'https://kinoger.to' }
         });
         const html = await response.text();
 
+        // 2. Extract the mirror lists
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let mirrors = [];
+        let mirrorLinks = [];
         let match;
-
         while ((match = showRegex.exec(html)) !== null) {
             try {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
-                const episodeLink = parsed[0][epIndex]; 
-                if (episodeLink) mirrors.push(episodeLink.trim());
+                if (parsed[0][epIndex]) mirrorLinks.push(parsed[0][epIndex].trim());
             } catch (e) {}
         }
 
         const finalSources = [];
 
-        for (let mirror of mirrors) {
-            // Check if it's a kinoger.re hash that needs the API handshake
+        // 3. Handshake logic: Convert Hash to actual .m3u8
+        for (let mirror of mirrorLinks) {
             if (mirror.includes('kinoger.re/#')) {
                 const videoId = mirror.split('#')[1];
-                // Emulate the exact XHR request found in your logs
+                // Emulate the XHR request you found in your browser logs
                 const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
                 
                 const apiRes = await fetchv2(apiUrl, {
                     headers: {
                         'Referer': mirror,
-                        'X-Requested-With': 'XMLHttpRequest'
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
                     }
                 });
+                
                 const apiData = await apiRes.text();
                 
-                // Extract the master.m3u8 from the API response
+                // Regex to find the master.m3u8 inside the API response
                 const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                
                 if (hlsMatch) {
                     finalSources.push({
                         "url": hlsMatch[1],
                         "quality": "Auto (HD+)",
-                        "headers": { "Referer": "https://kinoger.re" }
+                        "headers": { 
+                            "Referer": "https://kinoger.re/",
+                            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+                        }
                     });
                 }
-            } else {
-                // Fallback: use built-in extractors for other hosts
-                const extracted = await loadExtractor(mirror, pageUrl);
-                if (extracted && Array.isArray(extracted)) {
-                    extracted.forEach(s => finalSources.push(s));
-                }
             }
-            if (finalSources.length > 0) break;
         }
 
-        // CRITICAL: Return JSON Array for Sora's Swift [StreamSource] model
-        return finalSources.length > 0 ? JSON.stringify(finalSources) : null;
+        // ASYNC MODE REQUIREMENT: Return a JSON string of the ARRAY
+        if (finalSources.length > 0) {
+            const output = JSON.stringify(finalSources);
+            console.log("Found Stream: " + output);
+            return output;
+        }
 
+        return null;
     } catch (e) {
+        console.log("Stream Error: " + e.message);
         return null;
     }
 }
