@@ -97,13 +97,10 @@ async function extractStreamUrl(url) {
         const [pageUrl, epMarker] = url.split('|episode=');
         const epIndex = parseInt(epMarker);
 
-        const response = await fetchv2(pageUrl, { 
-            headers: { 'Referer': 'https://kinoger.to' },
-            redirect: 'follow' 
-        });
+        // 1. Get the Mirror Links from the main page
+        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
 
-        // 1. Find all potential mirrors (kinoger.re, strmup, etc)
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrorLinks = [];
         let match;
@@ -117,44 +114,57 @@ async function extractStreamUrl(url) {
 
         const finalSources = [];
 
-        // 2. Scan each mirror for the hidden .m3u8 source
+        // 2. Emulate the XHR request you found in your logs
         for (let mirror of mirrorLinks) {
-            console.log('Scanning mirror: ' + mirror);
-            const mirrorRes = await fetchv2(mirror, { headers: { 'Referer': pageUrl } });
-            const mirrorHtml = await mirrorRes.text();
+            if (mirror.includes('kinoger.re/#')) {
+                const videoId = mirror.split('#')[1];
+                // This matches the XHR URL from your log
+                const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
+                
+                console.log('Emulating XHR for ID: ' + videoId);
 
-            // Target the .m3u8 link we saw in your earlier "media-player" snippet
-            const hlsMatch = mirrorHtml.match(/src=["']([^"']+\.m3u8[^"']*)["']/i) || 
-                             mirrorHtml.match(/url["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i);
-
-            if (hlsMatch) {
-                finalSources.push({
-                    "url": hlsMatch[1],
-                    "quality": "Auto (HD)",
-                    "headers": {
-                        "Referer": mirror,
-                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+                const apiRes = await fetchv2(apiUrl, {
+                    headers: {
+                        'Referer': mirror,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
                     }
                 });
-            } else {
-                // If no direct link, try the Sora extractor for this mirror
+
+                const apiData = await apiRes.text();
+                
+                // The API response usually contains the .m3u8 link or a player config
+                // We look for the master.m3u8 pattern seen in your log
+                const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+
+                if (hlsMatch) {
+                    finalSources.push({
+                        "url": hlsMatch[1],
+                        "quality": "Auto (HD+)",
+                        "headers": {
+                            "Referer": "https://kinoger.re",
+                            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+                        }
+                    });
+                }
+            }
+            
+            // 3. Fallback to standard extractor for non-kinoger.re links
+            if (finalSources.length === 0) {
                 const extracted = await loadExtractor(mirror, pageUrl);
                 if (extracted && Array.isArray(extracted)) {
                     extracted.forEach(s => finalSources.push(s));
                 }
             }
+
             if (finalSources.length > 0) break;
         }
 
-        if (finalSources.length === 0) return null;
-
-        // 3. Return JSON Array for Sora's Swift [StreamSource] model
-        const output = JSON.stringify(finalSources);
-        console.log('Stream Data for Sora: ' + output);
-        return output;
+        // Final Return for Sora Swift Controller [StreamSource]
+        return finalSources.length > 0 ? JSON.stringify(finalSources) : null;
 
     } catch (e) {
-        console.log('Stream Error: ' + error.message);
+        console.log('API Handshake Error: ' + e.message);
         return null;
     }
 }
