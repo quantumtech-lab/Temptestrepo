@@ -98,42 +98,60 @@ async function extractStreamUrl(url) {
         const epIndex = parseInt(epMarker);
 
         const response = await fetchv2(pageUrl, { 
-            headers: { 'Referer': BASE_URL + '/' },
+            headers: { 'Referer': 'https://kinoger.to' },
             redirect: 'follow' 
         });
         const html = await response.text();
 
-        // 1. Get the iframe mirrors
+        // 1. Get the raw mirror links for the episode
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let mirrors = [];
+        let mirrorLinks = [];
         let match;
         while ((match = showRegex.exec(html)) !== null) {
             try {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
-                if (parsed[epIndex]) mirrors.push(parsed[epIndex].trim());
+                if (parsed[epIndex]) mirrorLinks.push(parsed[epIndex].trim());
             } catch (e) {}
         }
 
-        if (mirrors.length === 0) return null;
+        if (mirrorLinks.length === 0) return null;
 
-        const results = [];
-        for (let mirror of mirrors) {
-            // We tell Sora to treat the mirror as the source
-            // BUT we add the Referer and User-Agent to bypass the 'click-to-load' check
-            results.push({
-                "url": mirror,
-                "quality": "HD",
-                "headers": {
-                    "Referer": pageUrl,
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-                    "X-Requested-With": "XMLHttpRequest"
-                }
-            });
+        // 2. Resolve mirrors to direct stream URLs
+        const finalSources = [];
+        for (const mirror of mirrorLinks) {
+            const extracted = await loadExtractor(mirror, pageUrl);
+            
+            // loadExtractor returns an array of {url, quality, headers}
+            if (extracted && Array.isArray(extracted)) {
+                extracted.forEach(src => {
+                    if (src.url) {
+                        finalSources.push({
+                            "url": src.url,
+                            "quality": src.quality || "HD",
+                            "headers": src.headers || { "Referer": mirror }
+                        });
+                    }
+                });
+            } else if (extracted && extracted.url) {
+                finalSources.push({
+                    "url": extracted.url,
+                    "quality": extracted.quality || "HD",
+                    "headers": extracted.headers || { "Referer": mirror }
+                });
+            }
+            if (finalSources.length > 0) break;
         }
 
-        return JSON.stringify(results);
+        if (finalSources.length === 0) return null;
+
+        // 3. FIX: Return JSON string of the ARRAY (for Swift [StreamSource])
+        const output = JSON.stringify(finalSources);
+        console.log('Final Stream Data: ' + output);
+        return output;
+
     } catch (e) {
+        console.log('Stream Error: ' + e.message);
         return null;
     }
 }
