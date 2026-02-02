@@ -80,12 +80,19 @@ async function extractEpisodes(url) {
         const providerArray = JSON.parse(rawArrayString);
         const episodeLinks = providerArray[0]; // Access the nested list of links
 
-        const episodes = episodeLinks.map((_, index) => {
-            const displayNum = (index + 1).toString(); // FIX: Ensures numbering starts at 1
+        
+        const episodes = episodeLinks.map((linkData, index) => {
+            // linkData is likely the string "1 Episode" or similar
+            const rawLabel = linkData.toString(); 
+            
+            // Extract only the digits from the start of the string (e.g., "1" from "1 Episode")
+            const matchNumber = rawLabel.match(/^\d+/);
+            const displayNum = matchNumber ? matchNumber[0] : (index + 1).toString();
+        
             return {
-                "href": url + "|episode=" + index,
+                "href": url + "|episode=" + index, // Keep index for href if that's how your player finds it
                 "number": displayNum,
-                "image": poster // FIX: Adds the poster image to each episode
+                "image": poster
             };
         });
 
