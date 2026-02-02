@@ -103,7 +103,7 @@ async function extractStreamUrl(url) {
         });
         const html = await response.text();
 
-        // 1. Get all provider arrays
+        // 1. Get mirrors for this specific episode
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrors = [];
         let match;
@@ -119,20 +119,22 @@ async function extractStreamUrl(url) {
 
         if (mirrors.length === 0) return null;
 
-        // 2. USE THE EXTRACTOR (Crucial for iOS)
-        // Instead of returning the raw kinoger.re link, we resolve it
+        // 2. Resolve mirrors using Sora's extractor
         for (let mirror of mirrors) {
-            // Sora's loadExtractor will visit kinoger.re, find the video, 
-            // and return the actual .m3u8 or .mp4 URL
-            const resolved = await loadExtractor(mirror, BASE_URL + "/");
+            console.log('Attempting to extract: ' + mirror);
             
-            if (resolved && resolved.url) {
-                console.log('Successfully extracted video: ' + resolved.url);
-                return resolved.url; // Return the direct stream URL
+            // IMPORTANT: loadExtractor returns an ARRAY of sources
+            const extractedSources = await loadExtractor(mirror, BASE_URL + "/");
+            
+            if (extractedSources && extractedSources.length > 0) {
+                // If the extractor found multiple qualities, we return the first direct URL
+                const directUrl = extractedSources[0].url;
+                console.log('Extracted direct stream: ' + directUrl);
+                return directUrl; 
             }
         }
 
-        return null;
+        return null; // No playable stream found in any mirror
     } catch (e) {
         console.log('Stream Extraction Error: ' + e.message);
         return null;
