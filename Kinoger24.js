@@ -51,84 +51,83 @@ async function extractEpisodes(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/' });
         const html = await response.text();
         
-        // Find all .show() occurrences to support multiple hosters
+        // Find the first available hoster script to build the season structure
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let allMirrors = [];
-        let match;
-        while ((match = showRegex.exec(html)) !== null) {
-            try {
-                allMirrors.push(JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']')));
-            } catch(e) {}
-        }
+        let match = showRegex.exec(html); 
+        if (!match) return JSON.stringify([{ "href": url + "|s=0|e=0", "number": 1, "title": "Movie/Full" }]);
 
-        if (allMirrors.length === 0) return JSON.stringify([{ "href": url + "|episode=0", "number": 1, "title": "Movie" }]);
+        // Clean and parse: Result is usually [ [S1E1, S1E2], [S2E1, S2E2] ]
+        let rawJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const seasonData = JSON.parse(rawJson);
 
-        // Cloudstream 'Transpose' logic: allMirrors[HosterIndex][SeasonIndex][EpisodeIndex]
-        // For simplicity in Sora, we map the first available hoster's episodes
-        const firstHoster = allMirrors[0]; 
         const episodes = [];
-        
-        // Kinoger usually nests: [ [ep1, ep2, ep3] ] where [0] is the list
-        const list = firstHoster[0] || [];
-        list.forEach((_, index) => {
-            episodes.push({
-                "href": url + "|episode=" + index,
-                "number": index + 1,
-                "title": "Episode " + (index + 1)
+        seasonData.forEach((seasonArray, sIdx) => {
+            seasonArray.forEach((_, eIdx) => {
+                episodes.push({
+                    "href": `${url}|s=${sIdx}|e=${eIdx}`,
+                    "number": eIdx + 1,
+                    "season": sIdx + 1,
+                    "title": `S${sIdx + 1} E${eIdx + 1}`
+                });
             });
         });
 
         return JSON.stringify(episodes);
-    } catch (e) { return JSON.stringify([]); }
+    } catch (e) {
+        return JSON.stringify([]);
+    }
 }
 
 // 4. STREAM URL FUNCTION
-async function extractStreamUrl(url) {
+async function extractStreamUrl(urlData) {
     try {
-        const [pageUrl, epPart] = url.split('|episode=');
-        const epIndex = parseInt(epPart);
+        const [pageUrl, sPart, ePart] = urlData.split('|');
+        const sIdx = parseInt(sPart.split('=')[1]);
+        const eIdx = parseInt(ePart.split('=')[1]);
 
         const response = await fetchv2(pageUrl, { 'Referer': 'https://kinoger.to' });
         const html = await response.text();
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         
-        let mirrorLinks = [];
+        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        let results = [];
         let match;
+
+        // Iterate through ALL .show() matches (different hosters like VOE, VidHide, etc.)
         while ((match = showRegex.exec(html)) !== null) {
             try {
-                const parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
-                if (parsed[0] && parsed[0][epIndex]) mirrorLinks.push(parsed[0][epIndex].trim());
-            } catch (e) {}
-        }
-
-        for (let mirror of mirrorLinks) {
-            // Logic for Kinoger.re (VidStack API)
-            if (mirror.includes('kinoger.re/#')) {
-                const videoId = mirror.split('#')[1];
-                // FIXED: Corrected the API path and string template
-                const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
-
-                const apiRes = await fetchv2(apiUrl, {
-                    headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' }
-                });
+                let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+                const parsed = JSON.parse(cleanJson);
                 
-                const apiText = await apiRes.text();
-                const hlsMatch = apiText.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                
-                if (hlsMatch) {
-                    return JSON.stringify([{
-                        "url": hlsMatch[1],
-                        "quality": "Auto HD",
-                        "headers": { "Referer": "https://kinoger.re" }
-                    }]);
+                // Get the specific link for this season and episode
+                if (parsed[sIdx] && parsed[sIdx][eIdx]) {
+                    let mirror = parsed[sIdx][eIdx].trim();
+                    
+                    // Handle Kinoger.re (VidStack API)
+                    if (mirror.includes('kinoger.re/#')) {
+                        const videoId = mirror.split('#')[1];
+                        const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
+                        const apiRes = await fetchv2(apiUrl, { headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' } });
+                        const apiData = await apiRes.text();
+                        const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                        
+                        if (hlsMatch) {
+                            results.push({ "url": hlsMatch[1], "quality": "HLS: Kinoger.re", "headers": { "Referer": "https://kinoger.re" } });
+                        }
+                    } 
+                    // Handle VOE Aliases
+                    else if (mirror.includes('kinoger.ru')) {
+                        results.push({ "url": mirror.replace('kinoger.ru', 'voe.sx'), "quality": "Mirror: VOE" });
+                    }
+                    // Handle VidHide Aliases
+                    else if (mirror.includes('kinoger.be')) {
+                        results.push({ "url": mirror.replace('kinoger.be', 'vidhidepro.com'), "quality": "Mirror: VidHide" });
+                    }
                 }
-            }
-            // Logic for Kinoger.ru (VOE)
-            if (mirror.includes('kinoger.ru')) {
-                const voeUrl = mirror.replace('kinoger.ru', 'voe.sx');
-                return JSON.stringify([{ "url": voeUrl, "quality": "VOE Mirror" }]);
-            }
+            } catch (e) { continue; }
         }
+
+        return JSON.stringify(results);
+    } catch (e) {
         return JSON.stringify([]);
-    } catch (e) { return JSON.stringify([]); }
+    }
 }
