@@ -97,25 +97,44 @@ async function extractStreamUrl(url) {
         const [pageUrl, epMarker] = url.split('|episode=');
         const epIndex = parseInt(epMarker);
 
-        const response = await fetchv2(pageUrl, { 'Referer': BASE_URL + '/', redirect: 'follow' });
+        const response = await fetchv2(pageUrl, { 
+            headers: { 'Referer': BASE_URL + '/' },
+            redirect: 'follow' 
+        });
         const html = await response.text();
 
-        // Find all show arrays again to get the specific mirror for this episode
+        // 1. Get all provider arrays
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrors = [];
         let match;
 
         while ((match = showRegex.exec(html)) !== null) {
             try {
-                const cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+                let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
-                const link = parsed[0][epIndex]; // Get current episode from current provider
+                const link = parsed[epIndex]; 
                 if (link) mirrors.push(link.trim());
             } catch (e) {}
         }
 
-        // Return the first mirror found (usually pw.show / Stream HD+)
-        // You can add logic here to pick a specific hoster like Strmup
-        return mirrors.length > 0 ? mirrors[0] : null;
-    } catch (e) { return null; }
+        if (mirrors.length === 0) return null;
+
+        // 2. USE THE EXTRACTOR (Crucial for iOS)
+        // Instead of returning the raw kinoger.re link, we resolve it
+        for (let mirror of mirrors) {
+            // Sora's loadExtractor will visit kinoger.re, find the video, 
+            // and return the actual .m3u8 or .mp4 URL
+            const resolved = await loadExtractor(mirror, BASE_URL + "/");
+            
+            if (resolved && resolved.url) {
+                console.log('Successfully extracted video: ' + resolved.url);
+                return resolved.url; // Return the direct stream URL
+            }
+        }
+
+        return null;
+    } catch (e) {
+        console.log('Stream Extraction Error: ' + e.message);
+        return null;
+    }
 }
