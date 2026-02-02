@@ -122,6 +122,15 @@ async function extractStreamUrl(urlData) {
                     else if (mirror.includes('kinoger.be')) {
                         results.push({ "url": mirror.replace('kinoger.be', 'vidhidepro.com'), "quality": "Mirror: VidHide" });
                     }
+                    // Handle VidGuard Aliases
+                    else if (mirror.includes('kinoger.pw')) {
+                        results.push({ "url": mirror.replace('kinoger.pw', 'vidguard.to'), "quality": "Mirror: Vidguard" });
+                    }
+                    // Handle P2PPlay Aliases
+                    else if (mirror.includes('p2pplay.pro')) {
+                        results.push({ "url": mirror, "quality": "Mirror: P2PPlay", "headers": { "Referer": "https://kinoger.to" } });
+                    }
+
                 }
             } catch (e) { continue; }
         }
