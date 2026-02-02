@@ -32,41 +32,44 @@ async function extractDetails(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
 
-        // Use a simpler regex to avoid empty captures
+        // 1. Identify the metadata container
         const metaMatch = html.match(/class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
-        let description = "";
+        let description = "No description available";
         let airdate = "Unknown";
 
         if (metaMatch && metaMatch[1]) {
-            // Clean the HTML tags and special spans
-            let clean = metaMatch[1]
-                .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
-                .replace(/<[^>]*>/g, " ")
-                .replace(/[\r\n\t]+/g, " ")
-                .trim();
+            // Remove the specific "Masha" spans that clutter the text
+            let content = metaMatch[1].replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "");
             
-            // Extract plot (everything before 'Sprache:')
-            description = clean.split('Sprache:')[0].trim();
+            // 2. Extract Description: Skip the bold episode indicator (e.g., S19E01-08)
+            // We split by the first </b> tag or the specific episode pattern
+            let textOnly = content.replace(/<[^>]*>/g, " ").replace(/[\r\n\t]+/g, " ").trim();
             
-            // Extract airdate
-            const dateMatch = clean.match(/Erstausstrahlung:\s*([^ ]+)/i);
-            airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
+            // Logic to grab everything AFTER the episode count prefix
+            if (textOnly.includes("08")) {
+                description = textOnly.split(/08\s*/)[1] || textOnly;
+            } else {
+                description = textOnly;
+            }
+            
+            // Further clean the description by removing technical fields like "Sprache:"
+            description = description.split('Sprache:')[0].trim();
+
+            // 3. Extract Airdate: Target "Erstausstrahlung: [Date]"
+            const dateMatch = content.match(/Erstausstrahlung:\s*([^<]+)/i);
+            if (dateMatch) {
+                airdate = dateMatch[1].trim();
+            }
         }
 
-        // WRAP IN ARRAY: The logs confirm Sora is looking for Optional([])
-        const result = [{
-            "description": description || "No description available",
+        // Return the exact JSON object structure required by Sora
+        return JSON.stringify({
+            "description": description.replace(/"/g, "'"), // Escape double quotes
             "airdate": airdate,
             "aliases": "Kinoger HD+"
-        }];
-
-        const jsonOutput = JSON.stringify(result);
-        console.log('Returning Details: ' + jsonOutput);
-        return jsonOutput;
-
-    } catch (error) {
-        console.log('Details Error: ' + error.message);
-        return JSON.stringify([{ "description": "Error", "aliases": "", "airdate": "" }]);
+        });
+    } catch (e) {
+        return JSON.stringify({ "description": "Error loading details" });
     }
 }
 
