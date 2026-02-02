@@ -94,18 +94,16 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(url) {
     try {
-        // 1. Parse the URL and Episode Index
         const parts = url.split('|episode=');
         const pageUrl = parts[0];
         const epIndex = parseInt(parts[1]);
 
         const response = await fetchv2(pageUrl, { 
-            headers: { 'Referer': BASE_URL + '/' },
+            headers: { 'Referer': 'https://kinoger.to' },
             redirect: 'follow' 
         });
         const html = await response.text();
 
-        // 2. Extract the mirror arrays (pw, fsst, go, ollhd)
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrors = [];
         let match;
@@ -119,12 +117,46 @@ async function extractStreamUrl(url) {
             } catch (e) {}
         }
 
-        // Return the first mirror (usually Stream HD+)
-        // Sora's extractors will take over from here
-        return mirrors.length > 0 ? mirrors[0] : null;
+        const finalSources = [];
+
+        for (let mirror of mirrors) {
+            // Check if it's a kinoger.re hash that needs the API handshake
+            if (mirror.includes('kinoger.re/#')) {
+                const videoId = mirror.split('#')[1];
+                // Emulate the exact XHR request found in your logs
+                const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
+                
+                const apiRes = await fetchv2(apiUrl, {
+                    headers: {
+                        'Referer': mirror,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const apiData = await apiRes.text();
+                
+                // Extract the master.m3u8 from the API response
+                const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                if (hlsMatch) {
+                    finalSources.push({
+                        "url": hlsMatch[1],
+                        "quality": "Auto (HD+)",
+                        "headers": { "Referer": "https://kinoger.re" }
+                    });
+                }
+            } else {
+                // Fallback: use built-in extractors for other hosts
+                const extracted = await loadExtractor(mirror, pageUrl);
+                if (extracted && Array.isArray(extracted)) {
+                    extracted.forEach(s => finalSources.push(s));
+                }
+            }
+            if (finalSources.length > 0) break;
+        }
+
+        // CRITICAL: Return JSON Array for Sora's Swift [StreamSource] model
+        return finalSources.length > 0 ? JSON.stringify(finalSources) : null;
 
     } catch (e) {
         return null;
     }
 }
-
