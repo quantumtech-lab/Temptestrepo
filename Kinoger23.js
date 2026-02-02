@@ -97,9 +97,13 @@ async function extractStreamUrl(url) {
         const [pageUrl, epMarker] = url.split('|episode=');
         const epIndex = parseInt(epMarker);
 
-        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+        const response = await fetchv2(pageUrl, { 
+            headers: { 'Referer': 'https://kinoger.to' },
+            redirect: 'follow' 
+        });
         const html = await response.text();
 
+        // 1. Find all potential mirrors (kinoger.re, strmup, etc)
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrorLinks = [];
         let match;
@@ -111,36 +115,46 @@ async function extractStreamUrl(url) {
             } catch (e) {}
         }
 
+        const finalSources = [];
+
+        // 2. Scan each mirror for the hidden .m3u8 source
         for (let mirror of mirrorLinks) {
-            console.log('Handshaking with: ' + mirror);
-            
-            // 1. Fetch the mirror page itself
+            console.log('Scanning mirror: ' + mirror);
             const mirrorRes = await fetchv2(mirror, { headers: { 'Referer': pageUrl } });
             const mirrorHtml = await mirrorRes.text();
 
-            // 2. Look for the direct .m3u8 that the JS would normally inject
-            // In the HTML you sent, it was: https://kinoger.re
-            const hlsMatch = mirrorHtml.match(/src="([^"]+master\.m3u8[^"]+)"/i) || 
-                             mirrorHtml.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+            // Target the .m3u8 link we saw in your earlier "media-player" snippet
+            const hlsMatch = mirrorHtml.match(/src=["']([^"']+\.m3u8[^"']*)["']/i) || 
+                             mirrorHtml.match(/url["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i);
 
             if (hlsMatch) {
-                const finalUrl = hlsMatch[1];
-                console.log('Found Direct HLS: ' + finalUrl);
-
-                // 3. Return the JSON array Sora's Swift controller requires
-                return JSON.stringify([{
-                    "url": finalUrl,
-                    "quality": "HD",
+                finalSources.push({
+                    "url": hlsMatch[1],
+                    "quality": "Auto (HD)",
                     "headers": {
                         "Referer": mirror,
                         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
                     }
-                }]);
+                });
+            } else {
+                // If no direct link, try the Sora extractor for this mirror
+                const extracted = await loadExtractor(mirror, pageUrl);
+                if (extracted && Array.isArray(extracted)) {
+                    extracted.forEach(s => finalSources.push(s));
+                }
             }
+            if (finalSources.length > 0) break;
         }
-        return null;
+
+        if (finalSources.length === 0) return null;
+
+        // 3. Return JSON Array for Sora's Swift [StreamSource] model
+        const output = JSON.stringify(finalSources);
+        console.log('Stream Data for Sora: ' + output);
+        return output;
+
     } catch (e) {
-        console.log('Handshake Error: ' + e.message);
+        console.log('Stream Error: ' + e.message);
         return null;
     }
 }
