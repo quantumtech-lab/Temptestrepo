@@ -29,36 +29,36 @@ async function searchResults(keyword) {
 // 2. DETAILS FUNCTION
 async function extractDetails(url) {
     try {
-        console.log('Fetching details for URL: ' + url);
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
-        console.log('HTML received, length: ' + html.length);
 
-        const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
-        let description = "No description available";
+        // Use a simpler regex to avoid empty captures
+        const metaMatch = html.match(/class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
+        let description = "";
         let airdate = "Unknown";
 
-        if (metaBlock && metaBlock[1]) {
-            let content = metaBlock[1]
+        if (metaMatch && metaMatch[1]) {
+            // Clean the HTML tags and special spans
+            let clean = metaMatch[1]
                 .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
-                .replace(/<!--[\s\S]*?-->/g, "");
+                .replace(/<[^>]*>/g, " ")
+                .replace(/[\r\n\t]+/g, " ")
+                .trim();
             
-            let cleanText = content.replace(/<[^>]*>/g, " ").replace(/[\r\n\t]+/g, " ").trim();
+            // Extract plot (everything before 'Sprache:')
+            description = clean.split('Sprache:')[0].trim();
             
-            // Fix: Capture everything AFTER the episode count (S19E01-08)
-            const descParts = cleanText.split(/S\d+E\d+-\s*\d+/i);
-            description = descParts.length > 1 ? descParts[1].split('Sprache:')[0].trim() : cleanText;
-            
-            const dateMatch = cleanText.match(/Erstausstrahlung:\s*([^ ]+)/i);
+            // Extract airdate
+            const dateMatch = clean.match(/Erstausstrahlung:\s*([^ ]+)/i);
             airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
         }
 
-        // ASYNC MODE FIX: Ensure valid JSON with commas
-        const result = {
-            "description": description.replace(/"/g, "'"),
-            "aliases": "Kinoger HD+",
-            "airdate": airdate
-        };
+        // WRAP IN ARRAY: The logs confirm Sora is looking for Optional([])
+        const result = [{
+            "description": description || "No description available",
+            "airdate": airdate,
+            "aliases": "Kinoger HD+"
+        }];
 
         const jsonOutput = JSON.stringify(result);
         console.log('Returning Details: ' + jsonOutput);
@@ -66,36 +66,28 @@ async function extractDetails(url) {
 
     } catch (error) {
         console.log('Details Error: ' + error.message);
-        return JSON.stringify({ "description": "Error", "aliases": "", "airdate": "" });
+        return JSON.stringify([{ "description": "Error", "aliases": "", "airdate": "" }]);
     }
 }
 
-// 3. EPISODES FUNCTION
 async function extractEpisodes(url) {
     try {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
         
-        const posterMatch = html.match(/class="images-border">[\s\S]*?src="([^"]+)"/i);
-        const poster = posterMatch ? (posterMatch[1].startsWith('http') ? posterMatch[1] : BASE_URL + posterMatch[1]) : "";
+        // Match the script arrays from your snippets
+        const showRegex = /\.show\(\d+,\s*(\[\[[\s\S]*?\]\])\)/g;
+        let match = showRegex.exec(html);
+        if (!match) return JSON.stringify([]);
 
-        // Specifically targeting the nested arrays in your HTML
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let match = showRegex.exec(html); 
-        
-        if (!match || !match[1]) return JSON.stringify([]);
+        let rawArray = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const data = JSON.parse(rawArray);
+        const episodeUrls = data[0]; // Access the inner array of URLs
 
-        // Clean the JS array string so JSON.parse won't crash
-        let rawArrayString = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
-        const providerArray = JSON.parse(rawArrayString);
-        
-        // Your HTML structure is [[ep1, ep2...]] so we use [0]
-        const episodeList = providerArray[0];
-
-        const episodes = episodeList.map((_, index) => ({
-            number: (index + 1).toString(),
-            href: `${url}|episode=${index}`,
-            image: poster 
+        const episodes = episodeUrls.map((_, index) => ({
+            "number": (index + 1).toString(), // Prevents Episode 0
+            "href": `${url}|episode=${index}`,
+            "image": "" // You can add poster logic here if needed
         }));
 
         return JSON.stringify(episodes);
