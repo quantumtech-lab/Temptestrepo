@@ -94,77 +94,37 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(url) {
     try {
-        const [pageUrl, epMarker] = url.split('|episode=');
-        const epIndex = parseInt(epMarker);
+        // 1. Parse the URL and Episode Index
+        const parts = url.split('|episode=');
+        const pageUrl = parts[0];
+        const epIndex = parseInt(parts[1]);
 
-        // 1. Get the Mirror Links from the main page
-        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+        const response = await fetchv2(pageUrl, { 
+            headers: { 'Referer': BASE_URL + '/' },
+            redirect: 'follow' 
+        });
         const html = await response.text();
 
+        // 2. Extract the mirror arrays (pw, fsst, go, ollhd)
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let mirrorLinks = [];
+        let mirrors = [];
         let match;
+
         while ((match = showRegex.exec(html)) !== null) {
             try {
                 let cleanJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
                 const parsed = JSON.parse(cleanJson);
-                if (parsed[epIndex]) mirrorLinks.push(parsed[epIndex].trim());
+                const episodeLink = parsed[0][epIndex]; 
+                if (episodeLink) mirrors.push(episodeLink.trim());
             } catch (e) {}
         }
 
-        const finalSources = [];
-
-        // 2. Emulate the XHR request you found in your logs
-        for (let mirror of mirrorLinks) {
-            if (mirror.includes('kinoger.re/#')) {
-                const videoId = mirror.split('#')[1];
-                // This matches the XHR URL from your log
-                const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
-                
-                console.log('Emulating XHR for ID: ' + videoId);
-
-                const apiRes = await fetchv2(apiUrl, {
-                    headers: {
-                        'Referer': mirror,
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
-                    }
-                });
-
-                const apiData = await apiRes.text();
-                
-                // The API response usually contains the .m3u8 link or a player config
-                // We look for the master.m3u8 pattern seen in your log
-                const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-
-                if (hlsMatch) {
-                    finalSources.push({
-                        "url": hlsMatch[1],
-                        "quality": "Auto (HD+)",
-                        "headers": {
-                            "Referer": "https://kinoger.re",
-                            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-                        }
-                    });
-                }
-            }
-            
-            // 3. Fallback to standard extractor for non-kinoger.re links
-            if (finalSources.length === 0) {
-                const extracted = await loadExtractor(mirror, pageUrl);
-                if (extracted && Array.isArray(extracted)) {
-                    extracted.forEach(s => finalSources.push(s));
-                }
-            }
-
-            if (finalSources.length > 0) break;
-        }
-
-        // Final Return for Sora Swift Controller [StreamSource]
-        return finalSources.length > 0 ? JSON.stringify(finalSources) : null;
+        // Return the first mirror (usually Stream HD+)
+        // Sora's extractors will take over from here
+        return mirrors.length > 0 ? mirrors[0] : null;
 
     } catch (e) {
-        console.log('API Handshake Error: ' + e.message);
         return null;
     }
 }
+
