@@ -55,7 +55,7 @@ async function extractDetails(url) {
         return JSON.stringify(result);
 
     } catch (e) {
-        return JSON.stringify([{ "description": "Error: " + e.message }]);
+        return JSON.stringify([{ "description": "Error: " + error.message }]);
     }
 }
 
@@ -86,7 +86,7 @@ async function extractEpisodes(url) {
         return JSON.stringify(episodes);
 
     } catch (e) {
-        console.log("Episodes Logic Error: " + e.message);
+        console.log("Episodes Logic Error: " + error.message);
         return JSON.stringify([]);
     }
 }
@@ -154,7 +154,7 @@ async function extractStreamUrl(url) {
         return output;
 
     } catch (e) {
-        console.log('Stream Error: ' + e.message);
+        console.log('Stream Error: ' + error.message);
         return null;
     }
 }
