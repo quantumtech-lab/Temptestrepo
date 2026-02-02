@@ -32,7 +32,10 @@ async function extractDetails(url) {
         const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
         const html = await response.text();
 
+        // Target the metadata block you identified
         const metaBlock = html.match(/<div class="images-border"[^>]*>([\s\S]*?)<\/div>/i);
+        
+        // Default values
         let description = "No description available";
         let airdate = "Unknown";
 
@@ -41,25 +44,33 @@ async function extractDetails(url) {
                 .replace(/<span class="masha_index[^>]*>[\s\S]*?<\/span>/g, "")
                 .replace(/<!--[\s\S]*?-->/g, "");
             
-            // Clean the text and remove problematic characters like \n or \r
+            // CRITICAL: Remove all newlines, tabs, and unescaped quotes which break JSON
             let cleanText = content.replace(/<[^>]*>/g, " ").replace(/[\r\n\t]+/g, " ").trim();
             
+            // Extracting description before "Sprache:"
             description = cleanText.split('Sprache:')[0].trim();
             
+            // Extracting date after "Erstausstrahlung:"
             const dateMatch = cleanText.match(/Erstausstrahlung:\s*([^ ]+)/i);
             airdate = dateMatch ? dateMatch[1].trim() : "Unknown";
         }
 
-        // Return a single object (per Sora Docs) but ensure string safety
-        const result = {
-            description: description.replace(/"/g, '\\"'), // Escape quotes
-            airdate: airdate,
-            aliases: "Kinoger HD+"
+        // Return a SINGLE OBJECT (not an array) to match Sora Async requirements
+        const finalObj = {
+            "description": description.replace(/"/g, "'"), // Swap double to single quotes for safety
+            "airdate": airdate.replace(/"/g, ""),
+            "aliases": "Kinoger Stream"
         };
 
-        return JSON.stringify(result);
+        return JSON.stringify(finalObj);
+
     } catch (e) {
-        return JSON.stringify({ description: "Error" });
+        // This "logs" the error message to your Sora app's description area
+        return JSON.stringify({
+            "description": "DEBUG ERROR: " + e.message,
+            "airdate": "Error",
+            "aliases": "Error"
+        });
     }
 }
 
