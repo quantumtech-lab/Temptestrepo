@@ -79,9 +79,9 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
-async function extractStreamUrl(urlData) {
+async function extractStreamUrl(url) {
     try {
-        const parts = urlData.split('|');
+        const parts = url.split('|');
         if (parts.length < 3) return "https://error.org";
 
         const pageUrl = parts[0];
