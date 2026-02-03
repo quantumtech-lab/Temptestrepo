@@ -82,21 +82,24 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return "https://error.org";
+        if (parts.length < 3) return JSON.stringify([]);
 
         const pageUrl = parts[0];
+        // Fixed: Grab the integer value specifically to avoid NaN
         const sIdx = parseInt(parts[1].split('=')[1]);
         const eIdx = parseInt(parts[2].split('=')[1]);
 
-        // 1. Initial Page Load
-        const response = await fetchv2(pageUrl, { headers: { "Referer": "https://kinoger.to" } });
+        const response = await fetchv2(pageUrl, {
+            headers: { 'Referer': 'https://kinoger.to' }
+        });
         const html = await response.text();
-        
+
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let mirrorLinks = [];
         let match;
         while ((match = showRegex.exec(html)) !== null) {
             try {
+                // Ensure we capture the first group match[1]
                 const parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
                 if (parsed[sIdx] && parsed[sIdx][eIdx]) {
                     mirrorLinks.push(parsed[sIdx][eIdx].trim().replace(/["']/g, ""));
@@ -104,70 +107,64 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        const finalStreams = [];
-        const baseHeaders = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "X-Requested-With": "XMLHttpRequest"
-        };
-
+        let results = [];
         for (let mirror of mirrorLinks) {
             try {
                 if (mirror.includes('kinoger.re/#')) {
+                    // Fixed: Grab only the ID string knpo5a
                     const videoId = mirror.split('#')[1];
                     const mirrorBase = "https://kinoger.re";
 
-                    // STEP A: The 'Info' Check (Crucial for session validation)
-                    await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, { headers: { ...baseHeaders, "Referer": mirror } });
+                    // STEP 1: Info Pre-flight (Mimicking browser behavior)
+                    await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, { 
+                        headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' } 
+                    });
 
-                    // STEP B: The 'Video' Handshake
-                    const videoApiUrl = `${mirrorBase}/api/v1/video?id=${videoId}&w=1440&h=900&r=`;
-                    const videoRes = await fetchv2(videoApiUrl, { headers: { ...baseHeaders, "Referer": mirror } });
-                    const videoData = await videoRes.text();
+                    // STEP 2: Video API call
+                    const apiUrl = `${mirrorBase}/api/v1/video?id=${videoId}&w=1440&h=900&r=`;
+                    const apiRes = await fetchv2(apiUrl, {
+                        headers: { 
+                            'Referer': mirror, 
+                            'X-Requested-With': 'XMLHttpRequest' 
+                        }
+                    });
+                    const apiData = await apiRes.text();
 
-                    // STEP C: Extract the Player Token or direct Master Playlist
-                    const tokenMatch = videoData.match(/player\?t=([^"']+)/);
-                    const masterMatch = videoData.match(/["'](https?:\/\/[^"']+\/master\.m3u8[^"']*)["']/i);
+                    // STEP 3: Resolve HLS Playlist
+                    const tokenMatch = apiData.match(/player\?t=([^"']+)/);
+                    let finalUrl = "";
 
-                    let finalM3u8 = "";
-                    if (masterMatch) {
-                        finalM3u8 = masterMatch[1].replace(/\\/g, "");
-                    } else if (tokenMatch) {
-                        // Use the full token path from your log
-                        const playerRes = await fetchv2(`${mirrorBase}/api/v1/player?t=${tokenMatch[1]}`, { 
-                            headers: { ...baseHeaders, "Referer": mirror } 
+                    if (tokenMatch) {
+                        const playerRes = await fetchv2(`${mirrorBase}/api/v1/player?t=${tokenMatch[1]}`, {
+                            headers: { 'Referer': mirror }
                         });
                         const playerData = await playerRes.text();
-                        const hlsMatch = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                        if (hlsMatch) finalM3u8 = hlsMatch[1].replace(/\\/g, "");
+                        const hls = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                        if (hls) finalUrl = hls[1].replace(/\\/g, "");
                     }
 
-                    if (finalM3u8) {
-                        finalStreams.push({
-                            title: "Kinoger HLS (Auto)",
-                            streamUrl: finalM3u8,
-                            headers: { "Referer": mirrorBase, "Origin": mirrorBase }
+                    if (finalUrl) {
+                        results.push({
+                            "url": finalUrl,
+                            "quality": "Kinoger HLS",
+                            "headers": { "Referer": mirrorBase }
                         });
                     }
                 } 
-                // STEP D: The StrmUp/P2P Mirror from your log
-                else if (mirror.includes('p2pplay.pro')) {
-                    finalStreams.push({
-                        title: "P2PPlay Mirror",
-                        streamUrl: mirror,
-                        headers: { "Referer": "https://kinoger.to" }
+                // VOE Fallback
+                else if (mirror.includes('kinoger.ru')) {
+                    results.push({ 
+                        "url": mirror.replace('kinoger.ru', 'voe.sx'), 
+                        "quality": "VOE Mirror" 
                     });
                 }
-            } catch (err) { continue; }
+            } catch (innerE) { continue; }
         }
 
-        if (finalStreams.length === 0) return "https://error.org";
-
-        return JSON.stringify({
-            streams: finalStreams,
-            subtitles: ""
-        });
+        // Return flat array of objects as requested
+        return JSON.stringify(results);
 
     } catch (e) {
-        return "https://error.org";
+        return JSON.stringify([]);
     }
 }
