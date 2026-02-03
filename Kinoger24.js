@@ -156,16 +156,15 @@ async function extractStreamUrl(urlData) {
             }
         }
 
-        if (finalStreams.length === 0) return "https://error.org";
+        if (finalStreams.length === 0) return "Error: No playable mirrors found after handshake";
 
-        // Final Return Schema to match HiAnime example
         return JSON.stringify({
             streams: finalStreams,
             subtitles: ""
         });
 
     } catch (e) {
-        console.log("Stream Error: " + e.message);
-        return "https://error.org";
+        console.log("Global Stream Error: " + e.message);
+        return "Error: " + e.message;
     }
 }
