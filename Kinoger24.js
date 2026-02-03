@@ -167,6 +167,6 @@ async function extractStreamUrl(urlData) {
 
     } catch (e) {
         console.error(e);
-        return "https://error.org";
+        return JSON.stringify(e);
     }
 }
