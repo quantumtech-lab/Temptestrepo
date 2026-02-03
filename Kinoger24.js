@@ -82,12 +82,11 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return JSON.stringify([]);
+        if (parts.length < 3) return JSON.stringify({ streams: [], subtitles: "" });
 
         const pageUrl = parts[0];
-        // Fixed: Grab the integer value specifically to avoid NaN
-        const sIdx = parseInt(parts[1].split('=')[1]);
-        const eIdx = parseInt(parts[2].split('=')[1]);
+        const sIdx = parseInt((parts[1] || "s=0").split('=')[1]);
+        const eIdx = parseInt((parts[2] || "e=0").split('=')[1]);
 
         const response = await fetchv2(pageUrl, {
             headers: { 'Referer': 'https://kinoger.to' }
@@ -99,7 +98,7 @@ async function extractStreamUrl(urlData) {
         let match;
         while ((match = showRegex.exec(html)) !== null) {
             try {
-                // Ensure we capture the first group match[1]
+                // match[1] contains the JSON array string
                 const parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
                 if (parsed[sIdx] && parsed[sIdx][eIdx]) {
                     mirrorLinks.push(parsed[sIdx][eIdx].trim().replace(/["']/g, ""));
@@ -107,64 +106,63 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        let results = [];
+        const finalStreams = [];
+
         for (let mirror of mirrorLinks) {
             try {
                 if (mirror.includes('kinoger.re/#')) {
-                    // Fixed: Grab only the ID string knpo5a
                     const videoId = mirror.split('#')[1];
                     const mirrorBase = "https://kinoger.re";
 
-                    // STEP 1: Info Pre-flight (Mimicking browser behavior)
-                    await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, { 
-                        headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' } 
+                    // STEP 1: Handshake Info (Session Validation)
+                    await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, {
+                        headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' }
                     });
 
-                    // STEP 2: Video API call
+                    // STEP 2: Video Metadata API
                     const apiUrl = `${mirrorBase}/api/v1/video?id=${videoId}&w=1440&h=900&r=`;
                     const apiRes = await fetchv2(apiUrl, {
-                        headers: { 
-                            'Referer': mirror, 
-                            'X-Requested-With': 'XMLHttpRequest' 
-                        }
+                        headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' }
                     });
                     const apiData = await apiRes.text();
 
-                    // STEP 3: Resolve HLS Playlist
+                    // STEP 3: Token-based Player API
                     const tokenMatch = apiData.match(/player\?t=([^"']+)/);
-                    let finalUrl = "";
-
                     if (tokenMatch) {
                         const playerRes = await fetchv2(`${mirrorBase}/api/v1/player?t=${tokenMatch[1]}`, {
                             headers: { 'Referer': mirror }
                         });
                         const playerData = await playerRes.text();
-                        const hls = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                        if (hls) finalUrl = hls[1].replace(/\\/g, "");
-                    }
-
-                    if (finalUrl) {
-                        results.push({
-                            "url": finalUrl,
-                            "quality": "Kinoger HLS",
-                            "headers": { "Referer": mirrorBase }
-                        });
+                        
+                        // Final .m3u8 Extraction
+                        const hlsMatch = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                        if (hlsMatch) {
+                            finalStreams.push({
+                                title: "Kinoger HLS (Auto)",
+                                streamUrl: hlsMatch[1].replace(/\\/g, ""),
+                                headers: { "Referer": mirrorBase }
+                            });
+                        }
                     }
                 } 
-                // VOE Fallback
-                else if (mirror.includes('kinoger.ru')) {
-                    results.push({ 
-                        "url": mirror.replace('kinoger.ru', 'voe.sx'), 
-                        "quality": "VOE Mirror" 
+                // Handle standard Mirrors (VOE, etc.)
+                else if (mirror.includes('kinoger.ru') || mirror.includes('voe.sx')) {
+                    finalStreams.push({
+                        title: "Mirror: VOE",
+                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
+                        headers: { "Referer": "https://kinoger.to" }
                     });
                 }
-            } catch (innerE) { continue; }
+            } catch (innerErr) { continue; }
         }
 
-        // Return flat array of objects as requested
-        return JSON.stringify(results);
+        // Return strictly as the requested JSON object schema
+        return JSON.stringify({
+            streams: finalStreams,
+            subtitles: ""
+        });
 
     } catch (e) {
-        return JSON.stringify([]);
+        return JSON.stringify({ streams: [], subtitles: "" });
     }
 }
