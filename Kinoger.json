@@ -10,7 +10,7 @@
   "streamType": "HLS",
   "quality": "Multi",
   "baseUrl": "https://kinoger.to",
-  "searchBaseUrl": "https://kinoger.to/index.php?story=&do=search&subaction=search",
+  "searchBaseUrl": "https://kinoger.to/index.php?story=%s&do=search&subaction=search",
   "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger24.js",
   "asyncJS": true,
   "streamAsyncJS": true,
