@@ -88,9 +88,8 @@ async function extractStreamUrl(urlData) {
         const sIdx = parseInt(parts[1].split('=')[1]);
         const eIdx = parseInt(parts[2].split('=')[1]);
 
-        const response = await fetchv2(pageUrl, { 
-            headers: { "Referer": "https://kinoger.to" } 
-        });
+        // 1. Initial Page Load
+        const response = await fetchv2(pageUrl, { headers: { "Referer": "https://kinoger.to" } });
         const html = await response.text();
         
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
@@ -106,49 +105,55 @@ async function extractStreamUrl(urlData) {
         }
 
         const finalStreams = [];
+        const baseHeaders = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "X-Requested-With": "XMLHttpRequest"
+        };
 
         for (let mirror of mirrorLinks) {
             try {
                 if (mirror.includes('kinoger.re/#')) {
                     const videoId = mirror.split('#')[1];
-                    const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
-                    
-                    const apiRes = await fetchv2(apiUrl, {
-                        headers: { 
-                            "Referer": mirror, 
-                            "X-Requested-With": "XMLHttpRequest",
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0" 
-                        }
-                    });
-                    const apiData = await apiRes.text();
+                    const mirrorBase = "https://kinoger.re";
 
-                    // Step 2: Handle the token-based player request
-                    // We must capture the WHOLE match including player?t=
-                    const tokenMatch = apiData.match(/player\?t=[^"']+/);
-                    if (tokenMatch) {
-                        const fullTokenPath = tokenMatch[0]; // This includes 'player?t=...'
-                        const playerUrl = `https://kinoger.re{fullTokenPath}`;
-                        
-                        const playerRes = await fetchv2(playerUrl, {
-                            headers: { "Referer": mirror }
+                    // STEP A: The 'Info' Check (Crucial for session validation)
+                    await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, { headers: { ...baseHeaders, "Referer": mirror } });
+
+                    // STEP B: The 'Video' Handshake
+                    const videoApiUrl = `${mirrorBase}/api/v1/video?id=${videoId}&w=1440&h=900&r=`;
+                    const videoRes = await fetchv2(videoApiUrl, { headers: { ...baseHeaders, "Referer": mirror } });
+                    const videoData = await videoRes.text();
+
+                    // STEP C: Extract the Player Token or direct Master Playlist
+                    const tokenMatch = videoData.match(/player\?t=([^"']+)/);
+                    const masterMatch = videoData.match(/["'](https?:\/\/[^"']+\/master\.m3u8[^"']*)["']/i);
+
+                    let finalM3u8 = "";
+                    if (masterMatch) {
+                        finalM3u8 = masterMatch[1].replace(/\\/g, "");
+                    } else if (tokenMatch) {
+                        // Use the full token path from your log
+                        const playerRes = await fetchv2(`${mirrorBase}/api/v1/player?t=${tokenMatch[1]}`, { 
+                            headers: { ...baseHeaders, "Referer": mirror } 
                         });
                         const playerData = await playerRes.text();
-                        
                         const hlsMatch = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                        if (hlsMatch) {
-                            finalStreams.push({
-                                title: "Kinoger HLS",
-                                streamUrl: hlsMatch[1].replace(/\\/g, ""),
-                                headers: { "Referer": "https://kinoger.re" }
-                            });
-                        }
+                        if (hlsMatch) finalM3u8 = hlsMatch[1].replace(/\\/g, "");
+                    }
+
+                    if (finalM3u8) {
+                        finalStreams.push({
+                            title: "Kinoger HLS (Auto)",
+                            streamUrl: finalM3u8,
+                            headers: { "Referer": mirrorBase, "Origin": mirrorBase }
+                        });
                     }
                 } 
-                // Handle VOE/VidGuard/VidHide Aliases
-                else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
+                // STEP D: The StrmUp/P2P Mirror from your log
+                else if (mirror.includes('p2pplay.pro')) {
                     finalStreams.push({
-                        title: "VOE Mirror",
-                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
+                        title: "P2PPlay Mirror",
+                        streamUrl: mirror,
                         headers: { "Referer": "https://kinoger.to" }
                     });
                 }
@@ -157,16 +162,12 @@ async function extractStreamUrl(urlData) {
 
         if (finalStreams.length === 0) return "https://error.org";
 
-        // MUST MATCH THE HIANIME WRAPPER
-        const result = {
+        return JSON.stringify({
             streams: finalStreams,
             subtitles: ""
-        };
-
-        return JSON.stringify(result);
+        });
 
     } catch (e) {
-        console.error(e);
-        return JSON.stringify(e);
+        return "https://error.org";
     }
 }
