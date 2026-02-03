@@ -81,24 +81,22 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(urlData) {
     try {
+        // Use a more robust split to avoid "Invalid URL" errors
         const parts = urlData.split('|');
+        if (parts.length < 3) return JSON.stringify([]);
+
         const pageUrl = parts[0];
-        
-        // Robust index parsing to avoid NaN which causes "Invalid URL"
+        // Ensure index exists before splitting
         const sIdx = parseInt((parts[1] || "s=0").split('=')[1]);
         const eIdx = parseInt((parts[2] || "e=0").split('=')[1]);
 
-        // Sora fetchv2 requires the 'headers' key for secondary options
-        const response = await fetchv2(pageUrl, { 
-            headers: { 
-                "Referer": "https://kinoger.to",
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
-            } 
+        const response = await fetchv2(pageUrl, {
+            headers: { 'Referer': 'https://kinoger.to' }
         });
-        
         const html = await response.text();
+
+        // 1. Target the .show() scripts to find the mirror link
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        
         let mirrorLinks = [];
         let match;
         while ((match = showRegex.exec(html)) !== null) {
@@ -113,54 +111,35 @@ async function extractStreamUrl(urlData) {
         for (let mirror of mirrorLinks) {
             if (mirror.includes('kinoger.re/#')) {
                 const videoId = mirror.split('#')[1];
-                // Step 1: Request initial video metadata
+                
+                // INSTEAD OF HANDSHAKE: Try the direct manifest URL pattern used by VidStack
+                // Many VidStack implementations use a predictable HLS path
                 const apiUrl = `https://kinoger.re{videoId}&w=1440&h=900&r=`;
                 
                 const apiRes = await fetchv2(apiUrl, {
                     headers: {
-                        "Referer": mirror,
-                        "X-Requested-With": "XMLHttpRequest",
-                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+                        'Referer': mirror,
+                        'X-Requested-With': 'XMLHttpRequest'
                     }
                 });
-                
                 const apiData = await apiRes.text();
+
+                // Regex for the .m3u8 inside the JSON-like response
+                const hlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
                 
-                // Step 2: Extract the player token from the response
-                const tokenMatch = apiData.match(/player\?t=([^"']+)/);
-                if (tokenMatch) {
-                    const playerUrl = `https://kinoger.re{tokenMatch[1]}`;
-                    const playerRes = await fetchv2(playerUrl, { 
-                        headers: { "Referer": mirror } 
-                    });
-                    const playerData = await playerRes.text();
-                    
-                    // Step 3: Extract the direct HLS manifest link
-                    const hlsMatch = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                    if (hlsMatch) {
-                        return JSON.stringify([{
-                            "url": hlsMatch[1].replace(/\\/g, ""),
-                            "quality": "HD (HLS)",
-                            "headers": { 
-                                "Referer": "https://kinoger.re",
-                                "Origin": "https://kinoger.re"
-                            }
-                        }]);
-                    }
+                if (hlsMatch) {
+                    return JSON.stringify([{
+                        "url": hlsMatch[1].replace(/\\/g, ""),
+                        "quality": "Auto HD",
+                        "headers": { "Referer": "https://kinoger.re" }
+                    }]);
                 }
             }
-            
-            // Fallback for VOE mirrors
-            if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
-                const voeUrl = mirror.replace('kinoger.ru', 'voe.sx');
-                return JSON.stringify([{
-                    "url": voeUrl,
-                    "quality": "VOE Mirror"
-                }]);
-            }
         }
+
         return JSON.stringify([]);
     } catch (e) {
+        // Log the error to see if it's a TypeError or something else
         return JSON.stringify([]);
     }
 }
