@@ -79,18 +79,16 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
-async function extractStreamUrl(url) {
+async function extractStreamUrl(urlData) {
     try {
-        const parts = url.split('|');
-        if (parts.length < 3) return "https://error.org";
+        const parts = urlData.split('|');
+        if (parts.length < 3) return "Error: Data missing";
 
         const pageUrl = parts[0];
-        const sIdx = parseInt((parts[1] || "s=0").split('=')[1]);
-        const eIdx = parseInt((parts[2] || "e=0").split('=')[1]);
+        let sIdx = parseInt(parts[1].split('=')[1]) - 1;
+        let eIdx = parseInt(parts[2].split('=')[1]) - 1;
 
-        const response = await fetchv2(pageUrl, {
-            headers: { 'Referer': 'https://kinoger.to' }
-        });
+        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
 
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
@@ -106,57 +104,40 @@ async function extractStreamUrl(url) {
         }
 
         const finalStreams = [];
-
         for (let mirror of mirrorLinks) {
-            if (mirror.includes('kinoger.re/#')) {
-                const videoId = mirror.split('#')[1];
-                const mirrorBase = "https://kinoger.re";
-
-                // STEP 1: Pre-flight Info (Required to avoid "Invalid URL" / Session block)
-                await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, {
-                    headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' }
+            try {
+                // If it's a Kinoger.re link, we fetch the embed page directly
+                // and look for the 'file' or 'sources' inside its script tags.
+                const embedRes = await fetchv2(mirror, {
+                    headers: { 
+                        'Referer': 'https://kinoger.to',
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+                    }
                 });
+                const embedHtml = await embedRes.text();
 
-                // STEP 2: Video Handshake (Note the fixed slash before ?id)
-                const apiUrl = `${mirrorBase}/api/v1/video?id=${videoId}&w=1440&h=900&r=`;
-                const apiRes = await fetchv2(apiUrl, {
-                    headers: { 'Referer': mirror, 'X-Requested-With': 'XMLHttpRequest' }
-                });
-                const apiData = await apiRes.text();
-
-                // STEP 3: Handle player?t= token from your logs
-                const tokenMatch = apiData.match(/player\?t=([^"']+)/);
-                const directHlsMatch = apiData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-
-                let streamUrl = "";
-                if (directHlsMatch) {
-                    streamUrl = directHlsMatch[1].replace(/\\/g, "");
-                } else if (tokenMatch) {
-                    const playerRes = await fetchv2(`${mirrorBase}/api/v1/player?t=${tokenMatch[1]}`, {
-                        headers: { 'Referer': mirror }
-                    });
-                    const playerData = await playerRes.text();
-                    const hlsMatch = playerData.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                    if (hlsMatch) streamUrl = hlsMatch[1].replace(/\\/g, "");
-                }
-
-                if (streamUrl) {
+                // 1. Look for direct M3U8 inside the embed HTML (often in a JS config)
+                const hlsMatch = embedHtml.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                
+                if (hlsMatch) {
                     finalStreams.push({
                         title: "Kinoger HLS",
-                        streamUrl: streamUrl,
-                        headers: { "Referer": mirrorBase }
+                        streamUrl: hlsMatch[1].replace(/\\/g, ""),
+                        headers: { "Referer": "https://kinoger.re", "Origin": "https://kinoger.re" }
+                    });
+                } 
+                // 2. If no direct link, fallback to the VOE/VidGuard logic
+                else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
+                    finalStreams.push({
+                        title: "VOE Mirror",
+                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
+                        headers: { "Referer": "https://kinoger.to" }
                     });
                 }
-            } else if (mirror.includes('kinoger.ru') || mirror.includes('voe.sx')) {
-                finalStreams.push({
-                    title: "VOE Mirror",
-                    streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
-                    headers: { "Referer": "https://kinoger.to" }
-                });
-            }
+            } catch (err) { continue; }
         }
 
-        if (finalStreams.length === 0) return "Error: No playable mirrors found after handshake";
+        if (finalStreams.length === 0) return "Error: All mirrors failed to provide a valid manifest.";
 
         return JSON.stringify({
             streams: finalStreams,
@@ -164,7 +145,6 @@ async function extractStreamUrl(url) {
         });
 
     } catch (e) {
-        console.log("Global Stream Error: " + e.message);
-        return "Error: " + e.message;
+        return "Global Error: " + e.message;
     }
 }
