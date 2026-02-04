@@ -104,53 +104,42 @@ async function extractStreamUrl(urlData) {
         }
 
         const finalStreams = [];
-        const headers = {
-            'X-Requested-With': 'XMLHttpRequest',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        };
-
         for (let mirror of mirrorLinks) {
-            if (mirror.includes('kinoger.re/#')) {
-                const videoId = mirror.split('#')[1];
-                const mirrorBase = "https://kinoger.re";
-
-                // STEP 1: Pre-flight
-                await fetchv2(`${mirrorBase}/api/v1/info?id=${videoId}`, { headers: { ...headers, 'Referer': mirror } });
-
-                // STEP 2: Video API (Returns Base64 Token)
-                const videoRes = await fetchv2(`${mirrorBase}/api/v1/video?id=${videoId}&w=1440&h=900&r=`, { headers: { ...headers, 'Referer': mirror } });
-                const base64Token = await videoRes.text();
-
-                // DECODE BASE64 to HEX
-                let hexToken = "";
-                try {
-                    // atob is standard in browsers and Sora for decoding base64
-                    hexToken = atob(base64Token.trim()).replace(/["']/g, "");
-                } catch (e) {
-                    hexToken = base64Token.trim().replace(/["']/g, ""); // Fallback if already decoded
-                }
-
-                if (hexToken.length > 50) {
-                    // STEP 3: Player API using decoded Hex Token
-                    const playerRes = await fetchv2(`${mirrorBase}/api/v1/player?t=${hexToken}`, { headers: { ...headers, 'Referer': mirror } });
-                    const playerText = await playerRes.text();
+            try {
+                // 1. STRMUP / P2PPLAY (Most reliable for scraping)
+                if (mirror.includes('strmup.to') || mirror.includes('p2pplay.pro')) {
+                    // Strmup links resolve to a manifest via their own internal API
+                    const strmupId = mirror.split('/').pop();
+                    const ajaxUrl = `https://strmup.to{strmupId}`;
+                    const ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                    const ajaxJson = await ajaxRes.json();
                     
-                    const hlsMatch = playerText.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                    if (hlsMatch) {
+                    if (ajaxJson.url || ajaxJson.file) {
                         finalStreams.push({
-                            title: "Kinoger HD (HLS)",
-                            streamUrl: hlsMatch[1].replace(/\\/g, ""),
-                            headers: { "Referer": mirrorBase, "Origin": mirrorBase }
+                            title: "Mirror: StrmUp (Auto)",
+                            streamUrl: ajaxJson.url || ajaxJson.file,
+                            headers: { "Referer": "https://strmup.to" }
                         });
                     }
                 }
-            }
+                
+                // 2. VOE / VIDGUARD (Standard mirrors)
+                else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
+                    finalStreams.push({
+                        title: "Mirror: VOE",
+                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
+                        headers: { "Referer": "https://kinoger.to" }
+                    });
+                }
+            } catch (err) { continue; }
         }
 
-        if (finalStreams.length === 0) return "Error: Failed to decode stream token.";
+        if (finalStreams.length === 0) return "Error: Handshake too complex; try a different mirror.";
 
-        return JSON.stringify({ streams: finalStreams, subtitles: "" });
-
+        return JSON.stringify({
+            streams: finalStreams,
+            subtitles: ""
+        });
     } catch (e) {
         return "Global Error: " + e.message;
     }
