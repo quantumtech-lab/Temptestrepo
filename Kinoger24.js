@@ -82,11 +82,11 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return "Error: Data missing";
+        if (parts.length < 3) return "Error: Data split failed";
 
         const pageUrl = parts[0];
-        let sIdx = parseInt(parts[1].split('=')[1]) - 1;
-        let eIdx = parseInt(parts[2].split('=')[1]) - 1;
+        let sIdx = parseInt((parts[1] || "s=1").split('=')[1]) - 1;
+        let eIdx = parseInt((parts[2] || "e=1").split('=')[1]) - 1;
 
         const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
@@ -104,32 +104,37 @@ async function extractStreamUrl(urlData) {
         }
 
         const finalStreams = [];
+
         for (let mirror of mirrorLinks) {
             try {
-                // If it's a Kinoger.re link, we fetch the embed page directly
-                // and look for the 'file' or 'sources' inside its script tags.
-                const embedRes = await fetchv2(mirror, {
-                    headers: { 
-                        'Referer': 'https://kinoger.to',
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
-                    }
-                });
-                const embedHtml = await embedRes.text();
-
-                // 1. Look for direct M3U8 inside the embed HTML (often in a JS config)
-                const hlsMatch = embedHtml.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-                
-                if (hlsMatch) {
+                // 1. P2PPlay / Strmup Logic (From your XHR logs)
+                if (mirror.includes('p2pplay.pro') || mirror.includes('strmup.to')) {
                     finalStreams.push({
-                        title: "Kinoger HLS",
-                        streamUrl: hlsMatch[1].replace(/\\/g, ""),
-                        headers: { "Referer": "https://kinoger.re", "Origin": "https://kinoger.re" }
+                        title: "Mirror: P2P / StrmUp",
+                        streamUrl: mirror,
+                        headers: { "Referer": "https://kinoger.to" }
                     });
-                } 
-                // 2. If no direct link, fallback to the VOE/VidGuard logic
+                }
+                
+                // 2. Kinoger.re Scraping Logic
+                else if (mirror.includes('kinoger.re')) {
+                    const embedRes = await fetchv2(mirror, { headers: { 'Referer': 'https://kinoger.to' } });
+                    const embedHtml = await embedRes.text();
+                    const hlsMatch = embedHtml.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+                    
+                    if (hlsMatch) {
+                        finalStreams.push({
+                            title: "Kinoger HLS",
+                            streamUrl: hlsMatch[1].replace(/\\/g, ""),
+                            headers: { "Referer": "https://kinoger.re" }
+                        });
+                    }
+                }
+                
+                // 3. VOE Fallback
                 else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
                     finalStreams.push({
-                        title: "VOE Mirror",
+                        title: "Mirror: VOE",
                         streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
                         headers: { "Referer": "https://kinoger.to" }
                     });
@@ -137,7 +142,7 @@ async function extractStreamUrl(urlData) {
             } catch (err) { continue; }
         }
 
-        if (finalStreams.length === 0) return "Error: All mirrors failed to provide a valid manifest.";
+        if (finalStreams.length === 0) return "Error: No playable mirrors extracted";
 
         return JSON.stringify({
             streams: finalStreams,
