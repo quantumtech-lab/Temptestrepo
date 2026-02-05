@@ -159,7 +159,7 @@ async function extractStreamUrl(urlData) {
                     finalStreams.push({
                         title: "StrmUp (Full Handshake)",
                         streamUrl: masterUrl,
-                        sourcesData: ajaxData.json
+                        sourcesData: ajaxData.json,
                         headers: { 
                             "Referer": "https://strmup.to",
                             "Origin": "https://strmup.to",
