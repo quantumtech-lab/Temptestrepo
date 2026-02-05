@@ -81,65 +81,67 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(urlData) {
     try {
-        const parts = urlData.split('|');
+        var parts = urlData.split('|');
         if (parts.length < 3) return "Error: Data split failed";
 
-        const pageUrl = parts[0];
-        let sIdx = (parseInt(parts[1].split('=')[1]) || 1) - 1;
-        let eIdx = (parseInt(parts[2].split('=')[1]) || 1) - 1;
+        var pageUrl = parts[0];
+        var sIdx = parseInt(parts[1].split('=')[1]) - 1;
+        var eIdx = parseInt(parts[2].split('=')[1]) - 1;
 
-        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
-        const html = await response.text();
+        var response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+        var html = await response.text();
 
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let mirrorLinks = [];
-        let match;
+        var showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        var mirrorLinks = [];
+        var match;
         while ((match = showRegex.exec(html)) !== null) {
             try {
-                const parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
+                var parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
                 if (parsed[sIdx] && parsed[sIdx][eIdx]) {
                     mirrorLinks.push(parsed[sIdx][eIdx].trim().replace(/["']/g, ""));
                 }
             } catch (e) {}
         }
 
-        const finalStreams = [];
+        var finalStreams = [];
 
-        for (let mirror of mirrorLinks) {
+        for (var i = 0; i < mirrorLinks.length; i++) {
+            var mirror = mirrorLinks[i];
             try {
-                // 1. STRMUP FIX: Corrected URL concatenation
-                if (mirror.includes('strmup.to')) {
-                    const fileCode = mirror.split('/').pop();
-                    if (!fileCode) continue;
-
-                    const ajaxUrl = "https://strmup.to" + fileCode;
-                    const ajaxRes = await fetchv2(ajaxUrl, { 
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror } 
-                    });
-                    const ajaxData = await ajaxRes.json();
-                    
-                    if (ajaxData.url || ajaxData.file) {
-                        finalStreams.push({
-                            title: "StrmUp (Direct)",
-                            streamUrl: ajaxData.url || ajaxData.file,
-                            headers: { "Referer": "https://strmup.to" }
+                // 1. STRMUP - Extraction from streaming_url parameter
+                if (mirror.indexOf('strmup.to') !== -1) {
+                    var fileCode = mirror.split('/').pop();
+                    if (fileCode) {
+                        var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
+                        var ajaxRes = await fetchv2(ajaxUrl, { 
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror } 
                         });
+                        var ajaxData = await ajaxRes.json();
+                        
+                        // Targeting the specific streaming_url key you identified
+                        if (ajaxData.streaming_url) {
+                            finalStreams.push({
+                                title: "StrmUp (Direct)",
+                                streamUrl: ajaxData.streaming_url.replace(/\\/g, ""),
+                                headers: { "Referer": "https://strmup.to" }
+                            });
+                        }
                     }
                 }
                 
-                // 2. P2PPLAY RESOLUTION: Resolving the hash to an actual video
-                else if (mirror.includes('p2pplay.pro')) {
-                    const p2pId = mirror.split('#')[1];
+                // 2. P2PPLAY - Keeping standard fallback logic
+                else if (mirror.indexOf('p2pplay.pro') !== -1) {
+                    var p2pId = mirror.split('#')[1];
                     if (p2pId) {
-                        // Most p2p mirrors use an info endpoint like this
-                        const infoUrl = "https://kinoger.p2pplay.pro" + p2pId;
-                        const infoRes = await fetchv2(infoUrl, { headers: { 'Referer': 'https://kinoger.to' } });
-                        const infoData = await infoRes.json();
+                        var infoUrl = "https://kinoger.p2pplay.pro/" + p2pId;
+                        var infoRes = await fetchv2(infoUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+                        var infoData = await infoRes.json();
                         
-                        if (infoData.url || infoData.file) {
+                        if (infoData.url || infoData.file || infoData.streaming_url) {
+                            var p2pUrl = infoData.streaming_url || infoData.url || infoData.file;
                             finalStreams.push({
                                 title: "P2PPlay (Auto)",
-                                streamUrl: infoData.url || infoData.file,
+                                streamUrl: p2pUrl.replace(/\\/g, ""),
                                 headers: { "Referer": "https://kinoger.p2pplay.pro" }
                             });
                         }
@@ -147,7 +149,7 @@ async function extractStreamUrl(urlData) {
                 }
                 
                 // 3. VOE Fallback
-                else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
+                else if (mirror.indexOf('voe.sx') !== -1 || mirror.indexOf('kinoger.ru') !== -1) {
                     finalStreams.push({
                         title: "VOE Mirror",
                         streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
@@ -157,7 +159,7 @@ async function extractStreamUrl(urlData) {
             } catch (err) { continue; }
         }
 
-        if (finalStreams.length === 0) return "Error: No playable alternative mirrors found.";
+        if (finalStreams.length === 0) return "Error: No playable mirrors found.";
 
         return JSON.stringify({
             streams: finalStreams,
