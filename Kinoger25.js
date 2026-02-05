@@ -120,13 +120,36 @@ async function extractStreamUrl(urlData) {
                     var ajaxData = await ajaxRes.json();
                     
                     if (ajaxData && ajaxData.streaming_url) {
+                        var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                        
+                        // 2. MANUAL XHR: Fetch the Master Manifest to trigger CDN session
+                        var masterRes = await fetchv2(masterUrl, { 
+                            headers: { 'Referer': 'https://strmup.to', 'User-Agent': browserUA } 
+                        });
+                        var masterContent = await masterRes.text();
+
+                        // 3. MANUAL XHR: Extract and fetch Video Index (index_1920x1080.m3u8)
+                        var videoIndexMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
+                        if (videoIndexMatch) {
+                            var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
+                            var videoIndexUrl = baseUrl + videoIndexMatch[0];
+                            await fetchv2(videoIndexUrl, { headers: { 'Referer': 'https://strmup.to', 'User-Agent': browserUA } });
+                        }
+
+                        // 4. MANUAL XHR: Extract and fetch Audio Index (audio/.../index.m3u8)
+                        var audioIndexMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
+                        if (audioIndexMatch) {
+                            await fetchv2(audioIndexMatch[0], { headers: { 'Referer': 'https://strmup.to', 'User-Agent': browserUA } });
+                        }
+
+                        // Return the Master URL to the player with warmed-up session
                         finalStreams.push({
-                            title: "StrmUp (Direct)",
-                            streamUrl: ajaxData.streaming_url.replace(/\\/g, ""),
+                            title: "StrmUp Manual (Multi-Track)",
+                            streamUrl: masterUrl,
                             headers: { 
-                                "Referer": mirror,
+                                "Referer": "https://strmup.to",
                                 "Origin": "https://strmup.to",
-                                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+                                "User-Agent": browserUA,
                                 "Connection": "keep-alive"
                             }
                         });
