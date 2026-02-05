@@ -5,7 +5,7 @@
     "name": "Community",
     "icon": "https://kinoger.to/templates/kinoger/images/logo.png"
   },
-  "version": "1.0.6",
+  "version": "1.0.5",
   "language": "German",
   "streamType": "HLS",
   "quality": "Multi",
