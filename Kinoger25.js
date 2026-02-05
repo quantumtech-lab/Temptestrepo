@@ -85,12 +85,8 @@ async function extractStreamUrl(urlData) {
         if (parts.length < 3) return JSON.stringify({ streams: [] });
 
         var pageUrl = parts[0];
-        var rawS = parseInt(parts[1].split('=')[1]);
-        var rawE = parseInt(parts[2].split('=')[1]);
-        
-        // Normalize indices for 0-based arrays
-        var sIdx = rawS > 0 ? rawS - 1 : 0;
-        var eIdx = rawE > 0 ? rawE - 1 : 0;
+        var sIdx = parseInt(parts[1].split('=')[1]) - 1;
+        var eIdx = parseInt(parts[2].split('=')[1]) - 1;
 
         var response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         var html = await response.text();
@@ -108,14 +104,18 @@ async function extractStreamUrl(urlData) {
         }
 
         var finalStreams = [];
+        var browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0";
+
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
             try {
                 if (mirror.indexOf('strmup.to') !== -1) {
                     var fileCode = mirror.split('/').pop();
                     var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
+                    
+                    // 1. MANUAL XHR: Fetch the StrmUp JSON
                     var ajaxRes = await fetchv2(ajaxUrl, { 
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror } 
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
                     });
                     var ajaxData = await ajaxRes.json();
                     
@@ -155,21 +155,12 @@ async function extractStreamUrl(urlData) {
                         });
                     }
                 }
-                // Fallback for VOE
-                else if (mirror.indexOf('voe.sx') !== -1 || mirror.indexOf('kinoger.ru') !== -1) {
-                    finalStreams.push({
-                        title: "VOE Mirror",
-                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
-                        headers: { "Referer": "https://kinoger.to" }
-                    });
-                }
-            } catch (err) { continue; }
+            } catch (err) { console.log("XHR Sequence Failed: " + err); continue; }
         }
 
-        // Fix: Return an empty array for subtitles to stop the "JSON parsing error"
         return JSON.stringify({
             streams: finalStreams,
-            subtitles: [] 
+            subtitles: []
         });
 
     } catch (e) {
