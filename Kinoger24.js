@@ -82,7 +82,7 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return "Error: Data split failed";
+        if (parts.length < 3) return "Error: Invalid href";
 
         const pageUrl = parts[0];
         let sIdx = parseInt((parts[1] || "s=1").split('=')[1]) - 1;
@@ -104,26 +104,37 @@ async function extractStreamUrl(urlData) {
         }
 
         const finalStreams = [];
+
         for (let mirror of mirrorLinks) {
             try {
-                // 1. STRMUP / P2PPLAY (Most reliable for scraping)
-                if (mirror.includes('strmup.to') || mirror.includes('p2pplay.pro')) {
-                    // Strmup links resolve to a manifest via their own internal API
-                    const strmupId = mirror.split('/').pop();
-                    const ajaxUrl = `https://strmup.to{strmupId}`;
-                    const ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                    const ajaxJson = await ajaxRes.json();
+                // 1. STRMUP Mirror (Using the AJAX API found in your logs)
+                if (mirror.includes('strmup.to')) {
+                    const fileCode = mirror.split('/').pop();
+                    const ajaxUrl = `https://strmup.to{fileCode}`;
+                    const ajaxRes = await fetchv2(ajaxUrl, { 
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror } 
+                    });
+                    const ajaxData = await ajaxRes.json();
                     
-                    if (ajaxJson.url || ajaxJson.file) {
+                    if (ajaxData.url || ajaxData.file) {
                         finalStreams.push({
-                            title: "Mirror: StrmUp (Auto)",
-                            streamUrl: ajaxJson.url || ajaxJson.file,
+                            title: "Mirror: StrmUp",
+                            streamUrl: ajaxData.url || ajaxData.file,
                             headers: { "Referer": "https://strmup.to" }
                         });
                     }
                 }
                 
-                // 2. VOE / VIDGUARD (Standard mirrors)
+                // 2. P2PPlay Mirror
+                else if (mirror.includes('p2pplay.pro')) {
+                    finalStreams.push({
+                        title: "Mirror: P2PPlay",
+                        streamUrl: mirror,
+                        headers: { "Referer": "https://kinoger.to" }
+                    });
+                }
+                
+                // 3. VOE Mirror
                 else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
                     finalStreams.push({
                         title: "Mirror: VOE",
@@ -134,12 +145,13 @@ async function extractStreamUrl(urlData) {
             } catch (err) { continue; }
         }
 
-        if (finalStreams.length === 0) return "Error: Handshake too complex; try a different mirror.";
+        if (finalStreams.length === 0) return "Error: No playable mirrors found.";
 
         return JSON.stringify({
             streams: finalStreams,
             subtitles: ""
         });
+
     } catch (e) {
         return "Global Error: " + e.message;
     }
