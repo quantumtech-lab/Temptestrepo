@@ -12,7 +12,7 @@
   "baseUrl": "https://kinoger.to",
   "searchBaseUrl": "https://kinoger.to/index.php?story=&do=search&subaction=search",
   "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger26.js",
-  "asyncJS": true,
+  "asyncJS": false,
   "streamAsyncJS": true,
   "softsub": false,
 }
