@@ -82,11 +82,12 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         var parts = urlData.split('|');
-        if (parts.length < 3) return JSON.stringify({ streams: [] });
+        if (parts.length < 3) return JSON.stringify({ streams: [], subtitles: [] });
 
         var pageUrl = parts[0];
-        var sIdx = parseInt(parts[1].split('=')[1]) - 1;
-        var eIdx = parseInt(parts[2].split('=')[1]) - 1;
+        // Improved index parsing to ensure integers
+        var sIdx = parseInt((parts[1] || "s=1").replace("s=", "")) - 1;
+        var eIdx = parseInt((parts[2] || "e=1").replace("e=", "")) - 1;
 
         var response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         var html = await response.text();
@@ -109,55 +110,62 @@ async function extractStreamUrl(urlData) {
 
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
+            if (mirror.indexOf('strmup.to') === -1) continue;
+
             try {
-                if (mirror.indexOf('strmup.to') !== -1) {
-                    var fileCode = mirror.split('/').pop();
-                    var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
-                    
-                    // 1. Fetch AJAX Stream Info
-                    var ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
-                    var ajaxData = await ajaxRes.json();
-                    
-                    if (ajaxData && ajaxData.streaming_url) {
-                        var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
-                        var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
+                var fileCode = mirror.split('/').pop();
+                var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
+                
+                var ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
+                var ajaxData = await ajaxRes.json();
+                
+                if (ajaxData && ajaxData.streaming_url) {
+                    var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                    var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
 
-                        // 2. Trigger Master Manifest Request
+                    // PING 1: Master Manifest
+                    var masterContent = "";
+                    try {
                         var masterRes = await fetchv2(masterUrl, { headers: commonHeaders });
-                        var masterContent = await masterRes.text();
+                        masterContent = await masterRes.text();
+                    } catch(e) {}
 
-                        // 3. Trigger Video Index and First Video Segment (.ts)
+                    // PING 2: Video Index
+                    var vIdxUrl = "";
+                    try {
                         var vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
                         if (vIdxMatch) {
-                            var vIdxUrl = (vIdxMatch[0].indexOf('http') === 0) ? vIdxMatch[0] : baseUrl + vIdxMatch[0];
+                            vIdxUrl = (vIdxMatch[0].indexOf('http') === 0) ? vIdxMatch[0] : baseUrl + vIdxMatch[0];
                             var vIdxRes = await fetchv2(vIdxUrl, { headers: commonHeaders });
                             var vIdxContent = await vIdxRes.text();
                             
+                            // PING 3: Video Segment (the .ts file)
                             var firstTsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
                             if (firstTsMatch) {
                                 var tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + firstTsMatch[0];
-                                // Manual XHR to ping the video segment
                                 await fetchv2(tsUrl, { headers: { ...commonHeaders, 'Range': 'bytes=0-1024' } });
                             }
                         }
+                    } catch(e) {}
 
-                        // 4. Trigger Audio Index (Manual XHR only, no segment fetch)
+                    // PING 4: Audio Index
+                    try {
                         var aIdxMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
                         if (aIdxMatch) {
                             await fetchv2(aIdxMatch[0], { headers: commonHeaders });
                         }
+                    } catch(e) {}
 
-                        finalStreams.push({
-                            title: "StrmUp (Warmed Session)",
-                            streamUrl: masterUrl,
-                            headers: { 
-                                "Referer": "https://strmup.to",
-                                "Origin": "https://strmup.to",
-                                "User-Agent": browserUA,
-                                "Connection": "keep-alive"
-                            }
-                        });
-                    }
+                    finalStreams.push({
+                        title: "StrmUp (Full Handshake)",
+                        streamUrl: masterUrl,
+                        headers: { 
+                            "Referer": "https://strmup.to",
+                            "Origin": "https://strmup.to",
+                            "User-Agent": browserUA,
+                            "Connection": "keep-alive"
+                        }
+                    });
                 }
             } catch (err) { continue; }
         }
@@ -165,6 +173,6 @@ async function extractStreamUrl(urlData) {
         return JSON.stringify({ streams: finalStreams, subtitles: [] });
 
     } catch (e) {
-        return JSON.stringify({ streams: [], error: e.message });
+        return JSON.stringify({ streams: [], subtitles: [] });
     }
 }
