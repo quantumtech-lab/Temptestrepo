@@ -82,11 +82,11 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return "Error: Invalid href";
+        if (parts.length < 3) return "Error: Data split failed";
 
         const pageUrl = parts[0];
-        let sIdx = parseInt((parts[1] || "s=1").split('=')[1]) - 1;
-        let eIdx = parseInt((parts[2] || "e=1").split('=')[1]) - 1;
+        let sIdx = (parseInt(parts[1].split('=')[1]) || 1) - 1;
+        let eIdx = (parseInt(parts[2].split('=')[1]) || 1) - 1;
 
         const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
@@ -107,10 +107,12 @@ async function extractStreamUrl(urlData) {
 
         for (let mirror of mirrorLinks) {
             try {
-                // 1. STRMUP Mirror (Using the AJAX API found in your logs)
+                // 1. STRMUP FIX: Corrected URL concatenation
                 if (mirror.includes('strmup.to')) {
                     const fileCode = mirror.split('/').pop();
-                    const ajaxUrl = `https://strmup.to{fileCode}`;
+                    if (!fileCode) continue;
+
+                    const ajaxUrl = "https://strmup.to" + fileCode;
                     const ajaxRes = await fetchv2(ajaxUrl, { 
                         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror } 
                     });
@@ -118,26 +120,36 @@ async function extractStreamUrl(urlData) {
                     
                     if (ajaxData.url || ajaxData.file) {
                         finalStreams.push({
-                            title: "Mirror: StrmUp",
+                            title: "StrmUp (Direct)",
                             streamUrl: ajaxData.url || ajaxData.file,
                             headers: { "Referer": "https://strmup.to" }
                         });
                     }
                 }
                 
-                // 2. P2PPlay Mirror
+                // 2. P2PPLAY RESOLUTION: Resolving the hash to an actual video
                 else if (mirror.includes('p2pplay.pro')) {
-                    finalStreams.push({
-                        title: "Mirror: P2PPlay",
-                        streamUrl: mirror,
-                        headers: { "Referer": "https://kinoger.to" }
-                    });
+                    const p2pId = mirror.split('#')[1];
+                    if (p2pId) {
+                        // Most p2p mirrors use an info endpoint like this
+                        const infoUrl = "https://kinoger.p2pplay.pro" + p2pId;
+                        const infoRes = await fetchv2(infoUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+                        const infoData = await infoRes.json();
+                        
+                        if (infoData.url || infoData.file) {
+                            finalStreams.push({
+                                title: "P2PPlay (Auto)",
+                                streamUrl: infoData.url || infoData.file,
+                                headers: { "Referer": "https://kinoger.p2pplay.pro" }
+                            });
+                        }
+                    }
                 }
                 
-                // 3. VOE Mirror
+                // 3. VOE Fallback
                 else if (mirror.includes('voe.sx') || mirror.includes('kinoger.ru')) {
                     finalStreams.push({
-                        title: "Mirror: VOE",
+                        title: "VOE Mirror",
                         streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
                         headers: { "Referer": "https://kinoger.to" }
                     });
@@ -145,7 +157,7 @@ async function extractStreamUrl(urlData) {
             } catch (err) { continue; }
         }
 
-        if (finalStreams.length === 0) return "Error: No playable mirrors found.";
+        if (finalStreams.length === 0) return "Error: No playable alternative mirrors found.";
 
         return JSON.stringify({
             streams: finalStreams,
