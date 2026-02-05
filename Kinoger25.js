@@ -104,7 +104,7 @@ async function extractStreamUrl(urlData) {
         }
 
         var finalStreams = [];
-        var browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0";
+        var browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
 
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
@@ -145,7 +145,7 @@ async function extractStreamUrl(urlData) {
                         // Return the Master URL to the player with warmed-up session
                         finalStreams.push({
                             title: "StrmUp Manual (Multi-Track)",
-                            streamUrl: masterUrl,
+                            streamUrl: VideoIndexUrl,
                             headers: { 
                                 "Referer": "https://strmup.to",
                                 "Origin": "https://strmup.to",
