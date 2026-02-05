@@ -104,7 +104,8 @@ async function extractStreamUrl(urlData) {
         }
 
         var finalStreams = [];
-        var browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+        var browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0";
+        var commonHeaders = { 'Referer': 'https://strmup.to', 'User-Agent': browserUA };
 
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
@@ -113,39 +114,42 @@ async function extractStreamUrl(urlData) {
                     var fileCode = mirror.split('/').pop();
                     var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
                     
-                    // 1. MANUAL XHR: Fetch the StrmUp JSON
-                    var ajaxRes = await fetchv2(ajaxUrl, { 
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
-                    });
+                    // 1. Fetch AJAX Stream Info
+                    var ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
                     var ajaxData = await ajaxRes.json();
                     
                     if (ajaxData && ajaxData.streaming_url) {
                         var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
-                        
-                        // 2. MANUAL XHR: Fetch the Master Manifest to trigger CDN session
-                        var masterRes = await fetchv2(masterUrl, { 
-                            headers: { 'Referer': 'https://strmup.to', 'User-Agent': browserUA } 
-                        });
+                        var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
+
+                        // 2. Trigger Master Manifest Request
+                        var masterRes = await fetchv2(masterUrl, { headers: commonHeaders });
                         var masterContent = await masterRes.text();
 
-                        // 3. MANUAL XHR: Extract and fetch Video Index (index_1920x1080.m3u8)
-                        var videoIndexMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
-                        if (videoIndexMatch) {
-                            var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
-                            var videoIndexUrl = baseUrl + videoIndexMatch[0];
-                            await fetchv2(videoIndexUrl, { headers: { 'Referer': 'https://strmup.to', 'User-Agent': browserUA } });
+                        // 3. Trigger Video Index and First Video Segment (.ts)
+                        var vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
+                        if (vIdxMatch) {
+                            var vIdxUrl = (vIdxMatch[0].indexOf('http') === 0) ? vIdxMatch[0] : baseUrl + vIdxMatch[0];
+                            var vIdxRes = await fetchv2(vIdxUrl, { headers: commonHeaders });
+                            var vIdxContent = await vIdxRes.text();
+                            
+                            var firstTsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
+                            if (firstTsMatch) {
+                                var tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + firstTsMatch[0];
+                                // Manual XHR to ping the video segment
+                                await fetchv2(tsUrl, { headers: { ...commonHeaders, 'Range': 'bytes=0-1024' } });
+                            }
                         }
 
-                        // 4. MANUAL XHR: Extract and fetch Audio Index (audio/.../index.m3u8)
-                        var audioIndexMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
-                        if (audioIndexMatch) {
-                            await fetchv2(audioIndexMatch[0], { headers: { 'Referer': 'https://strmup.to', 'User-Agent': browserUA } });
+                        // 4. Trigger Audio Index (Manual XHR only, no segment fetch)
+                        var aIdxMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
+                        if (aIdxMatch) {
+                            await fetchv2(aIdxMatch[0], { headers: commonHeaders });
                         }
 
-                        // Return the Master URL to the player with warmed-up session
                         finalStreams.push({
-                            title: "StrmUp Manual (Multi-Track)",
-                            streamUrl: VideoIndexUrl,
+                            title: "StrmUp (Warmed Session)",
+                            streamUrl: masterUrl,
                             headers: { 
                                 "Referer": "https://strmup.to",
                                 "Origin": "https://strmup.to",
@@ -155,13 +159,10 @@ async function extractStreamUrl(urlData) {
                         });
                     }
                 }
-            } catch (err) { console.log("XHR Sequence Failed: " + err); continue; }
+            } catch (err) { continue; }
         }
 
-        return JSON.stringify({
-            streams: finalStreams,
-            subtitles: []
-        });
+        return JSON.stringify({ streams: finalStreams, subtitles: [] });
 
     } catch (e) {
         return JSON.stringify({ streams: [], error: e.message });
