@@ -140,24 +140,24 @@ async function extractStreamUrl(urlData) {
                 }
                 
                 // 2. P2PPLAY - Correcting the API path for the App
-                else if (mirror.indexOf('p2pplay.pro') !== -1) {
-                    var p2pId = mirror.split('#')[1];
-                    if (p2pId) {
-                        // Added /api/v1/info?id= which is standard for p2pplay
-                        var infoUrl = "https://kinoger.p2pplay.pro/" + p2pId;
-                        var infoRes = await fetchv2(infoUrl, { headers: { 'Referer': 'https://kinoger.to' } });
-                        var infoData = await infoRes.json();
+//                else if (mirror.indexOf('p2pplay.pro') !== -1) {
+//                    var p2pId = mirror.split('#')[1];
+//                    if (p2pId) {
+//                        // Added /api/v1/info?id= which is standard for p2pplay
+//                        var infoUrl = "https://kinoger.p2pplay.pro/" + p2pId;
+//                        var infoRes = await fetchv2(infoUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+//                        var infoData = await infoRes.json();
                         
-                        var p2pUrl = infoData.streaming_url || infoData.url || infoData.file;
-                        if (p2pUrl) {
-                            finalStreams.push({
-                                title: "P2PPlay (Auto)",
-                                streamUrl: p2pUrl.replace(/\\/g, ""),
-                                headers: { "Referer": "https://kinoger.p2pplay.pro/" }
-                            });
-                        }
-                    }
-                }
+//                        var p2pUrl = infoData.streaming_url || infoData.url || infoData.file;
+//                        if (p2pUrl) {
+//                            finalStreams.push({
+//                                title: "P2PPlay (Auto)",
+//                                streamUrl: p2pUrl.replace(/\\/g, ""),
+//                                headers: { "Referer": "https://kinoger.p2pplay.pro/" }
+//                            });
+//                        }
+//                    }
+//                }
                 
                 // 3. VOE Fallback
                 else if (mirror.indexOf('voe.sx') !== -1 || mirror.indexOf('kinoger.ru') !== -1) {
