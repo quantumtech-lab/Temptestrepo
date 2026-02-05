@@ -85,8 +85,14 @@ async function extractStreamUrl(urlData) {
         if (parts.length < 3) return "Error: Data split failed";
 
         var pageUrl = parts[0];
-        var sIdx = parseInt(parts[1].split('=')[1]) - 1;
-        var eIdx = parseInt(parts[2].split('=')[1]) - 1;
+        
+        // AUTO-DETECT INDICES: Handle both 0-based and 1-based input
+        var rawS = parseInt(parts[1].split('=')[1]);
+        var rawE = parseInt(parts[2].split('=')[1]);
+        
+        // If Sora sends 1, we need 0. If Sora sends 0, we keep 0.
+        var sIdx = rawS > 0 ? rawS - 1 : 0;
+        var eIdx = rawE > 0 ? rawE - 1 : 0;
 
         var response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         var html = await response.text();
@@ -97,7 +103,8 @@ async function extractStreamUrl(urlData) {
         while ((match = showRegex.exec(html)) !== null) {
             try {
                 var parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
-                if (parsed[sIdx] && parsed[sIdx][eIdx]) {
+                // Bounds check to prevent "No mirrors found" error
+                if (parsed && parsed[sIdx] && parsed[sIdx][eIdx]) {
                     mirrorLinks.push(parsed[sIdx][eIdx].trim().replace(/["']/g, ""));
                 }
             } catch (e) {}
@@ -108,7 +115,7 @@ async function extractStreamUrl(urlData) {
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
             try {
-                // 1. STRMUP - Extraction from streaming_url parameter
+                // 1. STRMUP - The working logic from your browser test
                 if (mirror.indexOf('strmup.to') !== -1) {
                     var fileCode = mirror.split('/').pop();
                     if (fileCode) {
@@ -118,8 +125,7 @@ async function extractStreamUrl(urlData) {
                         });
                         var ajaxData = await ajaxRes.json();
                         
-                        // Targeting the specific streaming_url key you identified
-                        if (ajaxData.streaming_url) {
+                        if (ajaxData && ajaxData.streaming_url) {
                             finalStreams.push({
                                 title: "StrmUp (Direct)",
                                 streamUrl: ajaxData.streaming_url.replace(/\\/g, ""),
@@ -129,20 +135,21 @@ async function extractStreamUrl(urlData) {
                     }
                 }
                 
-                // 2. P2PPLAY - Keeping standard fallback logic
+                // 2. P2PPLAY - Correcting the API path for the App
                 else if (mirror.indexOf('p2pplay.pro') !== -1) {
                     var p2pId = mirror.split('#')[1];
                     if (p2pId) {
+                        // Added /api/v1/info?id= which is standard for p2pplay
                         var infoUrl = "https://kinoger.p2pplay.pro/" + p2pId;
                         var infoRes = await fetchv2(infoUrl, { headers: { 'Referer': 'https://kinoger.to' } });
                         var infoData = await infoRes.json();
                         
-                        if (infoData.url || infoData.file || infoData.streaming_url) {
-                            var p2pUrl = infoData.streaming_url || infoData.url || infoData.file;
+                        var p2pUrl = infoData.streaming_url || infoData.url || infoData.file;
+                        if (p2pUrl) {
                             finalStreams.push({
                                 title: "P2PPlay (Auto)",
                                 streamUrl: p2pUrl.replace(/\\/g, ""),
-                                headers: { "Referer": "https://kinoger.p2pplay.pro" }
+                                headers: { "Referer": "https://kinoger.p2pplay.pro/" }
                             });
                         }
                     }
