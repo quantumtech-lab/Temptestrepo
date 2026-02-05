@@ -126,7 +126,7 @@ async function extractStreamUrl(urlData) {
                             headers: { 
                                 "Referer": mirror,
                                 "Origin": "https://strmup.to",
-                                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+                                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
                                 "Connection": "keep-alive"
                             }
                         });
