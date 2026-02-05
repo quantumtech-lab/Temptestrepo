@@ -85,8 +85,12 @@ async function extractStreamUrl(urlData) {
         if (parts.length < 3) return JSON.stringify({ streams: [] });
 
         var pageUrl = parts[0];
-        var sIdx = parseInt(parts[1].split('=')[1]) - 1;
-        var eIdx = parseInt(parts[2].split('=')[1]) - 1;
+        var rawS = parseInt(parts[1].split('=')[1]);
+        var rawE = parseInt(parts[2].split('=')[1]);
+        
+        // Normalize indices for 0-based arrays
+        var sIdx = rawS > 0 ? rawS - 1 : 0;
+        var eIdx = rawE > 0 ? rawE - 1 : 0;
 
         var response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         var html = await response.text();
@@ -104,63 +108,45 @@ async function extractStreamUrl(urlData) {
         }
 
         var finalStreams = [];
-        var browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
-
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
             try {
                 if (mirror.indexOf('strmup.to') !== -1) {
                     var fileCode = mirror.split('/').pop();
                     var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
-                    
-                    // 1. MANUAL XHR: Fetch the StrmUp JSON
                     var ajaxRes = await fetchv2(ajaxUrl, { 
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror } 
                     });
                     var ajaxData = await ajaxRes.json();
                     
                     if (ajaxData && ajaxData.streaming_url) {
-                        var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
-                        
-                        // 2. MANUAL XHR: Fetch the Master Manifest to trigger CDN session
-                        var masterRes = await fetchv2(masterUrl, { 
-                            headers: { 'Referer': mirror, 'User-Agent': browserUA } 
-                        });
-                        var masterContent = await masterRes.text();
-
-                        // 3. MANUAL XHR: Extract and fetch Video Index (index_1920x1080.m3u8)
-                        var videoIndexMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
-                        if (videoIndexMatch) {
-                            var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
-                            var videoIndexUrl = baseUrl + videoIndexMatch[0];
-                            await fetchv2(videoIndexUrl, { headers: { 'Referer': mirror, 'User-Agent': browserUA } });
-                        }
-
-                        // 4. MANUAL XHR: Extract and fetch Audio Index (audio/.../index.m3u8)
-                        var audioIndexMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
-                        if (audioIndexMatch) {
-                            await fetchv2(audioIndexMatch[0], { headers: { 'Referer': mirror, 'User-Agent': browserUA } });
-                        }
-
-                        // Return the Master URL to the player with warmed-up session
                         finalStreams.push({
-                            title: "StrmUp Manual (Multi-Track)",
-                            streamUrl: masterUrl,
+                            title: "StrmUp (Direct)",
+                            streamUrl: ajaxData.streaming_url.replace(/\\/g, ""),
                             headers: { 
                                 "Referer": mirror,
                                 "Origin": "https://strmup.to",
-                                "User-Agent": browserUA,
+                                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
                                 "Connection": "keep-alive"
                             }
                         });
                     }
                 }
-            } catch (err) { console.log("XHR Sequence Failed: " + err); continue; }
+                // Fallback for VOE
+                else if (mirror.indexOf('voe.sx') !== -1 || mirror.indexOf('kinoger.ru') !== -1) {
+                    finalStreams.push({
+                        title: "VOE Mirror",
+                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
+                        headers: { "Referer": "https://kinoger.to" }
+                    });
+                }
+            } catch (err) { continue; }
         }
 
+        // Fix: Return an empty array for subtitles to stop the "JSON parsing error"
         return JSON.stringify({
             streams: finalStreams,
-            subtitles: []
+            subtitles: [] 
         });
 
     } catch (e) {
