@@ -109,29 +109,23 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        const browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+        const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0";
 
         for (const mirror of mirrorLinks) {
             if (mirror.includes('strmup.to')) {
                 const fileCode = mirror.split('/').pop();
-                const ajaxRes = await fetchv2("https://strmup.to/ajax/stream?filecode=" + fileCode, { 
+                const ajaxRes = await fetchv2("https://strmup.to" + fileCode, { 
                     headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
                 });
                 const ajaxData = await ajaxRes.json();
                 
                 if (ajaxData && ajaxData.streaming_url) {
-                    const finalUrl = ajaxData.streaming_url.replace(/\\/g, "");
-                    // SORA TIP: If the plain URL fails, return this format to force headers into the player
-                    return JSON.stringify({
-                        "url": finalUrl,
-                        "headers": {
-                            "Referer": "https://strmup.to",
-                            "User-Agent": browserUA
-                        }
-                    });
+                    // RETURN ONLY THE RAW STRING
+                    // This matches the "Output: URL" requirement in your documentation
+                    return ajaxData.streaming_url.replace(/\\/g, "");
                 }
             }
         }
-        return "";
+        return ""; 
     } catch (e) { return ""; }
 }
