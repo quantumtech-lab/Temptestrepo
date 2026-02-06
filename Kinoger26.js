@@ -153,50 +153,36 @@ function extractDetails(html) {
    3. EPISODES
    ========================= */
 function extractEpisodes(html) {
-    const episodes = [];
+    const seasons = [];
+    const seasonBlocks = html.split('<div class="season"');
 
-    // Find the .show(...) call that contains episode structure
-    const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/;
-    const match = html.match(showRegex);
+    for (let i = 1; i < seasonBlocks.length; i++) {
+        const block = seasonBlocks[i];
+        const seasonMatch = block.match(/data-season="(\d+)"/);
+        if (!seasonMatch) continue;
 
-    // Fallback: treat as movie-like entry
-    if (!match) {
-        episodes.push({
-            href: "movie|s=0|e=0",
-            number: "1"
-        });
-        return episodes;
+        const seasonNumber = parseInt(seasonMatch[1]);
+        const episodes = [];
+
+        const episodeBlocks = block.split('<div class="episode"');
+        for (let j = 1; j < episodeBlocks.length; j++) {
+            const epBlock = episodeBlocks[j];
+            const linkMatch = epBlock.match(/<a\s+href="([^"]+)">([^<]+)<\/a>/);
+            if (!linkMatch) continue;
+
+            let href = linkMatch[1].trim();
+            let title = linkMatch[2].trim();
+
+            // Fix relative URLs
+            if (href[0] === "/") href = "https://kinoger.to" + href;
+
+            episodes.push({ title, href });
+        }
+
+        seasons.push({ season: seasonNumber, episodes });
     }
 
-    let raw = match[1];
-
-    // Convert JS array → valid JSON
-    try {
-        raw = raw
-            .replace(/'/g, '"')
-            .replace(/,\s*\]/g, "]");
-
-        const seasons = JSON.parse(raw);
-
-        seasons.forEach((season, sIndex) => {
-            if (!Array.isArray(season)) return;
-
-            season.forEach((_, eIndex) => {
-                episodes.push({
-                    href: `series|s=${sIndex}|e=${eIndex}`,
-                    number: String(eIndex + 1),
-                    season: String(sIndex + 1),
-                    title: `S${sIndex + 1}E${eIndex + 1}`
-                });
-            });
-        });
-
-    } catch (e) {
-        // If parsing fails, return empty list safely
-        return [];
-    }
-
-    return episodes;
+    return seasons;
 }
 
 /* =========================
