@@ -8,13 +8,12 @@ const BASE_URL = "https://kinoger.to";
 function searchResults(html) {
     const results = [];
 
-    // Each result is wrapped in this block
     const blocks = html.split('<div class="titlecontrol">');
 
     for (let i = 1; i < blocks.length; i++) {
         const block = blocks[i];
 
-        // Title + href
+        // Extract link and title
         const linkMatch = block.match(
             /<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/
         );
@@ -22,29 +21,36 @@ function searchResults(html) {
 
         let href = linkMatch[1].trim();
         let title = linkMatch[2]
-            .replace(/<[^>]+>/g, "")   // strip HTML
-            .replace(/\s+Film$/i, "") // remove " Film"
+            .replace(/<[^>]+>/g, "")
+            .replace(/\s+Film$/i, "")
             .trim();
 
-        // Poster image
+        // Extract image if present
         const imgMatch = block.match(
             /<img\s+[^>]*src="([^"]+)"/i
         );
         let image = imgMatch ? imgMatch[1].trim() : "";
 
-        // Normalize URLs
-        if (href && !href.startsWith("http")) {
-            href = BASE_URL + href;
+        // Fix relative URLs
+        if (href && href[0] === "/") {
+            href = "https://kinoger.to" + href;
         }
-        if (image && !image.startsWith("http")) {
-            image = BASE_URL + image;
+        if (image && image[0] === "/") {
+            image = "https://kinoger.to" + image;
+        }
+
+        // Determine type: movie or series
+        let type = "movie"; // default
+        if (/сезон|серия|season/i.test(block)) {
+            type = "series";
         }
 
         if (title && href) {
             results.push({
                 title: title,
                 image: image,
-                href: href
+                href: href,
+                type: type
             });
         }
     }
