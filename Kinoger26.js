@@ -52,28 +52,26 @@ async function extractDetails(url) {
 // 3. EPISODES FUNCTION
 async function extractEpisodes(url) {
     try {
-        const response = await fetchv2(url, { headers: { 'Referer': BASE_URL + '/' } });
+        const response = await fetchv2(url, { 'Referer': BASE_URL + '/' });
         const html = await response.text();
         
+        // Find the first available hoster script to build the season structure
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let match = showRegex.exec(html); 
-        
-        // Movie Fallback - matching your working s=0|e=0 logic
-        if (!match) return JSON.stringify([{ "href": url + "|s=0|e=0", "number": "1", "title": "Movie/Full" }]);
+        if (!match) return JSON.stringify([{ "href": url + "|s=0|e=0", "number": 1, "title": "Movie/Full" }]);
 
-        // CRITICAL FIX: Reverting to match[1] as per your working version
+        // Clean and parse: Result is usually [ [S1E1, S1E2], [S2E1, S2E2] ]
         let rawJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
         const seasonData = JSON.parse(rawJson);
 
         const episodes = [];
         seasonData.forEach((seasonArray, sIdx) => {
             seasonArray.forEach((_, eIdx) => {
-                // Restore your working logic exactly
                 episodes.push({
-                    "href": url + "|s=" + sIdx + "|e=" + eIdx,
-                    "number": (eIdx + 1).toString(), // Stringified as per Sora docs
-                    "season": (sIdx + 1).toString(),
-                    "title": "S" + (sIdx + 1) + " E" + (eIdx + 1)
+                    "href": `${url}|s=${sIdx}|e=${eIdx}`,
+                    "number": eIdx + 1,
+                    "season": sIdx + 1,
+                    "title": `S${sIdx + 1} E${eIdx + 1}`
                 });
             });
         });
