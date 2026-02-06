@@ -89,14 +89,11 @@ async function extractStreamUrl(urlData) {
         if (parts.length < 3) return null;
 
         const pageUrl = parts[0];
-        
-        // ROBUST INDEX PARSING (Fixes the NaN / Timeout issue)
-        const sMatch = parts[1].match(/\d+/);
-        const eMatch = parts[2].match(/\d+/);
-        const sIdx = sMatch ? parseInt(sMatch[0]) : 0;
-        const eIdx = eMatch ? parseInt(eMatch[0]) : 0;
+        const sMatch = urlData.match(/s=(\d+)/);
+        const eMatch = urlData.match(/e=(\d+)/);
+        const sIdx = sMatch ? parseInt(sMatch[1]) : 0;
+        const eIdx = eMatch ? parseInt(eMatch[1]) : 0;
 
-        // Fetch page with a short timeout hint
         const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
 
@@ -118,9 +115,7 @@ async function extractStreamUrl(urlData) {
             if (mirror.includes('strmup.to')) {
                 try {
                     const fileCode = mirror.split('/').pop();
-                    const ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
-                    
-                    const ajaxRes = await fetchv2(ajaxUrl, { 
+                    const ajaxRes = await fetchv2("https://strmup.to" + fileCode, { 
                         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': mobileUA } 
                     });
                     const ajaxData = await ajaxRes.json();
@@ -128,17 +123,12 @@ async function extractStreamUrl(urlData) {
                     if (ajaxData && ajaxData.streaming_url) {
                         const finalUrl = ajaxData.streaming_url.replace(/\\/g, "");
                         
-                        // Fire-and-forget (No 'await') to prevent function timeout
-                        fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to' } });
+                        // FIRE-AND-FORGET WARMUP
+                        // We fetch the master manifest in the background to initialize the CDN session
+                        // without waiting for it to finish (this prevents the 504 timeout)
+                        fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to', 'Connection': 'keep-alive' } });
 
-                        // Sora requires this format for authenticated HLS
-                        return JSON.stringify({
-                            "url": finalUrl,
-                            "headers": {
-                                "User-Agent": mobileUA,
-                                "Referer": "https://strmup.to"
-                            }
-                        });
+                        return finalUrl; 
                     }
                 } catch (err) { continue; }
             }
