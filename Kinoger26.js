@@ -83,17 +83,54 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
+// --- Helper Function: Strmup Handshake ---
+async function pingStrmupSession(masterUrl, commonHeaders) {
+    try {
+        const baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
+        
+        // 1. Ping Master Manifest
+        const masterRes = await fetchv2(masterUrl, { headers: commonHeaders });
+        const masterContent = await masterRes.text();
+        
+        // 2. Ping Video Index
+        const vMatch = masterContent.match(/index_[^"'\s]+\.m3u8/);
+        if (vMatch && vMatch[0]) {
+            const vIdxUrl = baseUrl + vMatch[0];
+            const vIdxRes = await fetchv2(vIdxUrl, { headers: commonHeaders });
+            const vIdxContent = await vIdxRes.text();
+            
+            // 3. Ping First Video Segment (.ts)
+            const tsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
+            if (tsMatch && tsMatch[0]) {
+                const tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + tsMatch[0];
+                await fetchv2(tsUrl, { headers: { ...commonHeaders, 'Range': 'bytes=0-1024' } });
+            }
+        }
+        
+        // 4. Ping Audio Index
+        const aMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8/);
+        if (aMatch && aMatch[0]) {
+            await fetchv2(aMatch[0], { headers: commonHeaders });
+        }
+    } catch (e) {
+        // We catch errors so the main function continues even if a "warm-up" ping fails
+        console.log("Handshake Ping failed, continuing anyway...");
+    }
+}
+
+// --- Main Stream Function ---
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return null; // Sora docs: return null if not found
+        if (parts.length < 3) return null;
 
         const pageUrl = parts[0];
-        // 0-BASED FIX: No "-1" here because your episodes now pass 0-based indices
-        const sIdx = parseInt(parts[1].split('=')[1]);
-        const eIdx = parseInt(parts[2].split('=')[1]);
+        const sMatch = urlData.match(/s=(\d+)/);
+        const eMatch = urlData.match(/e=(\d+)/);
+        const sIdx = sMatch ? parseInt(sMatch[1]) : 0;
+        const eIdx = eMatch ? parseInt(eMatch[1]) : 0;
 
-        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to/' } });
         const html = await response.text();
 
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
@@ -109,47 +146,29 @@ async function extractStreamUrl(urlData) {
         }
 
         const browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0";
-        const commonHeaders = { 'Referer': 'https://strmup.to', 'User-Agent': browserUA };
+        const commonHeaders = { 'Referer': 'https://strmup.to/', 'User-Agent': browserUA };
 
         for (const mirror of mirrorLinks) {
-            if (mirror.indexOf('strmup.to') === -1) continue;
+            if (mirror.indexOf('strmup.to/') !== -1) {
+                try {
+                    const fileCode = mirror.split('/').pop();
+                    const ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
+                    const ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
+                    const ajaxData = await ajaxRes.json();
+                    
+                    if (ajaxData && ajaxData.streaming_url) {
+                        const masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                        
+                        // Call the separate Handshake function
+                        await pingStrmupSession(masterUrl, commonHeaders);
 
-            try {
-                const fileCode = mirror.split('/').pop();
-                const ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
-                const ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
-                const ajaxData = await ajaxRes.json();
-                
-                if (ajaxData && ajaxData.streaming_url) {
-                    const masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
-                    const baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
-
-                    // Sequential Handshake (Essential for StrmUp)
-                    try {
-                        const masterRes = await fetchv2(masterUrl, { headers: commonHeaders });
-                        const masterContent = await masterRes.text();
-                        const vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8/);
-                        if (vIdxMatch) {
-                            const vIdxUrl = baseUrl + vIdxMatch[0];
-                            const vIdxRes = await fetchv2(vIdxUrl, { headers: commonHeaders });
-                            const vIdxContent = await vIdxRes.text();
-                            const firstTsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
-                            if (firstTsMatch) {
-                                await fetchv2(vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + firstTsMatch[0], { 
-                                    headers: { ...commonHeaders, 'Range': 'bytes=0-1024' } 
-                                });
-                            }
-                        }
-                    } catch(e) {}
-
-                    // IMPORTANT: Return ONLY the raw URL string per Sora docs
-                    return masterUrl; 
-                }
-            } catch (err) { continue; }
+                        return masterUrl; 
+                    }
+                } catch (err) { continue; }
+            }
         }
-
-        return null; // No mirrors worked
+        return null; 
     } catch (e) {
-        return null; // Global crash
+        return null;
     }
 }
