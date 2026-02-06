@@ -109,35 +109,26 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36";
+        const mobileUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
         for (const mirror of mirrorLinks) {
             if (mirror.includes('strmup.to')) {
                 try {
                     const fileCode = mirror.split('/').pop();
                     const ajaxRes = await fetchv2("https://strmup.to/ajax/stream?filecode=" + fileCode, { 
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': mobileUA } 
                     });
                     const ajaxData = await ajaxRes.json();
                     
                     if (ajaxData && ajaxData.streaming_url) {
-                        const masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                        const finalUrl = ajaxData.streaming_url.replace(/\\/g, "");
                         
-                        // --- OPTIMIZED FAST HANDSHAKE ---
-                        // We only do the Master and Index ping. We skip the .ts ping to save time and prevent 504.
-                        try {
-                            const mRes = await fetchv2(masterUrl, { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
-                            const mContent = await mRes.text();
-                            
-                            const vIdx = mContent.match(/index_[^"'\s]+\.m3u8/);
-                            if (vIdx) {
-                                const baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
-                                // Fire and forget the index ping
-                                fetchv2(baseUrl + vIdx[0], { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
-                            }
-                        } catch(e) {}
+                        // FIRE-AND-FORGET WARMUP
+                        // We fetch the master manifest in the background to initialize the CDN session
+                        // without waiting for it to finish (this prevents the 504 timeout)
+                        fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to' } });
 
-                        return masterUrl; 
+                        return finalUrl; 
                     }
                 } catch (err) { continue; }
             }
