@@ -79,31 +79,70 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
-async function extractStreamUrl(html) {
+async function extractStreamUrl(html, urlData) {
     try {
-        // Extract .show() JSON (contains mirrors/episodes)
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/;
-        const match = showRegex.exec(html);
-        if (!match) return null;
+        // urlData is the link we built: "url|s=1|e=1"
+        var parts = urlData.split('|');
+        if (parts.length < 3) return JSON.stringify({ streams: [], subtitles: [] });
 
-        const seasons = JSON.parse(match[1].replace(/'/g, '"'));
-        if (!seasons.length || !seasons[0].length) return null;
+        // Parse indices from our pipe string
+        var sIdx = parseInt(parts[1].replace("s=", "")) - 1;
+        var eIdx = parseInt(parts[2].replace("e=", "")) - 1;
 
-        const mirror = seasons[0][0]; // first mirror (movie or first episode)
-        if (!mirror) return null;
+        // We use the HTML Sora already gave us!
+        var showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        var mirrorLinks = [];
+        var match;
+        while ((match = showRegex.exec(html)) !== null) {
+            try {
+                var parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
+                if (parsed && parsed[sIdx] && parsed[sIdx][eIdx]) {
+                    mirrorLinks.push(parsed[sIdx][eIdx].trim().replace(/["']/g, ""));
+                }
+            } catch (e) {}
+        }
 
-        // Use streamAsyncjs format
-        return {
-            // AsyncJS mode tells Sora to handle iframe/embed URLs
-            asyncjs: true,
-            url: mirror.startsWith('http') ? mirror : `https:${mirror}`,
-            headers: {
-                'Referer': BASE_URL + '/',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
-            }
-        };
+        var finalStreams = [];
+        var browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0";
+
+        for (var i = 0; i < mirrorLinks.length; i++) {
+            var mirror = mirrorLinks[i];
+            try {
+                if (mirror.indexOf('strmup.to') !== -1) {
+                    var fileCode = mirror.split('/').pop();
+                    var ajaxUrl = "https://strmup.to" + fileCode;
+                    
+                    var ajaxRes = await fetchv2(ajaxUrl, { 
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
+                    });
+                    var ajaxData = await ajaxRes.json();
+                    
+                    if (ajaxData && ajaxData.streaming_url) {
+                        finalStreams.push({
+                            title: "StrmUp HD",
+                            streamUrl: ajaxData.streaming_url.replace(/\\/g, ""),
+                            headers: { 
+                                "Referer": "https://strmup.to",
+                                "Origin": "https://strmup.to",
+                                "User-Agent": browserUA
+                            }
+                        });
+                    }
+                }
+                // Add VOE fallback
+                else if (mirror.indexOf('voe.sx') !== -1 || mirror.indexOf('kinoger.ru') !== -1) {
+                    finalStreams.push({
+                        title: "VOE Mirror",
+                        streamUrl: mirror.replace('kinoger.ru', 'voe.sx'),
+                        headers: { "Referer": "https://kinoger.to" }
+                    });
+                }
+            } catch (err) { continue; }
+        }
+
+        return JSON.stringify({ streams: finalStreams, subtitles: [] });
 
     } catch (e) {
-        return null;
+        return JSON.stringify({ streams: [], subtitles: [] });
     }
 }
