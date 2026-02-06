@@ -128,7 +128,14 @@ async function extractStreamUrl(urlData) {
                         // without waiting for it to finish (this prevents the 504 timeout)
                         fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to', 'Connection': 'keep-alive' } });
 
-                        return finalUrl; 
+                        return JSON.stringify({
+                            "url": finalUrl,
+                            "headers": {
+                                "User-Agent": browserUA,
+                                "Referer": "https://strmup.to",
+                                "Connection": "keep-alive"
+                            }
+                        });
                     }
                 } catch (err) { continue; }
             }
