@@ -8,51 +8,48 @@ const BASE_URL = "https://kinoger.to";
 function searchResults(html) {
     const results = [];
 
+    // Each result block starts with titlecontrol + general_box
     const blocks = html.split('<div class="titlecontrol">');
 
     for (let i = 1; i < blocks.length; i++) {
         const block = blocks[i];
 
-        // Extract link and title
+        // Extract href + title
         const linkMatch = block.match(
-            /<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/
+            /<img[^>]*class="img">[\s\S]*?<a href="([^"]+)">([\s\S]*?)<\/a>/
         );
         if (!linkMatch) continue;
 
         let href = linkMatch[1].trim();
         let title = linkMatch[2]
             .replace(/<[^>]+>/g, "")
-            .replace(/\s+Film$/i, "")
             .trim();
 
-        // Extract image if present
-        const imgMatch = block.match(
-            /<img\s+[^>]*src="([^"]+)"/i
-        );
+        // Parse image (Kinoger uses dle_image_begin comment)
+        const imgMatch = block.match(/<!--dle_image_begin:([^|]+)\|/);
         let image = imgMatch ? imgMatch[1].trim() : "";
 
-        // Fix relative URLs
-        if (href && href[0] === "/") {
+        // Normalize relative URLs
+        if (href && href.startsWith("/")) {
             href = "https://kinoger.to" + href;
         }
-        if (image && image[0] === "/") {
+        if (image && image.startsWith("/")) {
             image = "https://kinoger.to" + image;
         }
 
-        // Determine type: movie or series
-        let type = "movie"; // default
-        if (/сезон|серия|season/i.test(block)) {
+        // Determine type: series if “staffel”, “serie” appears in categories
+        let type = "movie";
+        if (/<a href="https:\/\/kinoger.to\/stream\/serie\//i.test(block)
+         || /Staffel/i.test(block)) {
             type = "series";
         }
 
-        if (title && href) {
-            results.push({
-                title: title,
-                image: image,
-                href: href,
-                type: type
-            });
-        }
+        results.push({
+            title: title,
+            image: image,
+            href: href,
+            type: type
+        });
     }
 
     return results;
