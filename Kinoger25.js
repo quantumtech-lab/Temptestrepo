@@ -79,35 +79,92 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
-async function extractStreamUrl(html) {
+async function extractStreamUrl(urlData) {
     try {
-        // extract .show() data
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        const match = showRegex.exec(html);
-        if (!match) return null;
+        var parts = urlData.split('|');
+        if (parts.length < 3) return JSON.stringify({ streams: [] });
 
-        const seasons = JSON.parse(match[1].replace(/'/g, '"'));
-        const mirror = seasons[0][0]; // movie or first episode
+        var pageUrl = parts[0];
+        var sIdx = parseInt(parts[1].split('=')[1]) - 1;
+        var eIdx = parseInt(parts[2].split('=')[1]) - 1;
 
-        if (!mirror || !mirror.includes('strmup.to')) return null;
+        var response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+        var html = await response.text();
 
-        const fileCode = mirror.split('/').pop();
+        var showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        var mirrorLinks = [];
+        var match;
+        while ((match = showRegex.exec(html)) !== null) {
+            try {
+                var parsed = JSON.parse(match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']'));
+                if (parsed && parsed[sIdx] && parsed[sIdx][eIdx]) {
+                    mirrorLinks.push(parsed[sIdx][eIdx].trim().replace(/["']/g, ""));
+                }
+            } catch (e) {}
+        }
 
-        const ajaxRes = await fetchv2(
-            `https://strmup.to/ajax/stream?filecode=${fileCode}`,
-            {
-                'Referer': 'https://strmup.to',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
-            }
-        );
+        var finalStreams = [];
+        var browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+        var commonHeaders = { 'Referer': 'https://strmup.to', 'User-Agent': browserUA };
 
-        const ajaxData = await ajaxRes.json();
-        if (!ajaxData || !ajaxData.streaming_url) return null;
+        for (var i = 0; i < mirrorLinks.length; i++) {
+            var mirror = mirrorLinks[i];
+            try {
+                if (mirror.indexOf('strmup.to') !== -1) {
+                    var fileCode = mirror.split('/').pop();
+                    var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
+                    
+                    // 1. Fetch AJAX Stream Info
+                    var ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
+                    var ajaxData = await ajaxRes.json();
+                    
+                    if (ajaxData && ajaxData.streaming_url) {
+                        var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                        var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
 
-        // ✅ THIS is what Sora needs
-        return ajaxData.streaming_url.replace(/\\/g, '');
+                        // 2. Trigger Master Manifest Request
+                        var masterRes = await fetchv2(masterUrl, { headers: commonHeaders });
+                        var masterContent = await masterRes.text();
+
+                        // 3. Trigger Video Index and First Video Segment (.ts)
+                        var vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
+                        if (vIdxMatch) {
+                            var vIdxUrl = (vIdxMatch[0].indexOf('http') === 0) ? vIdxMatch[0] : baseUrl + vIdxMatch[0];
+                            var vIdxRes = await fetchv2(vIdxUrl, { headers: commonHeaders });
+                            var vIdxContent = await vIdxRes.text();
+                            
+                            var firstTsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
+                            if (firstTsMatch) {
+                                var tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + firstTsMatch[0];
+                                // Manual XHR to ping the video segment
+                                await fetchv2(tsUrl, { headers: { ...commonHeaders, 'Range': 'bytes=0-1024' } });
+                            }
+                        }
+
+                        // 4. Trigger Audio Index (Manual XHR only, no segment fetch)
+                        var aIdxMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
+                        if (aIdxMatch) {
+                            await fetchv2(aIdxMatch[0], { headers: commonHeaders });
+                        }
+
+                        finalStreams.push({
+                            title: "StrmUp (Warmed Session)",
+                            streamUrl: masterUrl,
+                            headers: { 
+                                "Referer": "https://strmup.to",
+                                "Origin": "https://strmup.to",
+                                "User-Agent": browserUA,
+                                "Connection": "keep-alive"
+                            }
+                        });
+                    }
+                }
+            } catch (err) { continue; }
+        }
+
+        return JSON.stringify({ streams: finalStreams, subtitles: [] });
 
     } catch (e) {
-        return null;
+        return JSON.stringify({ streams: [], error: e.message });
     }
 }
