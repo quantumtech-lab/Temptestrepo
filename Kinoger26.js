@@ -1,38 +1,51 @@
-const BASE_URL = "https://kinoger.to";
+//const BASE_URL = "https://kinoger.to";
 
 /* =========================
    1. SEARCH RESULTS
    ========================= */
 function searchResults(html) {
-    const results = [];
-    const seen = new Set();
+    var results = [];
 
-    const blocks = html.split('<div class="titlecontrol">');
+    // Split results safely
+    var blocks = html.split('<div class="separator2"></div>');
 
-    for (let i = 1; i < blocks.length; i++) {
-        const block = blocks[i];
+    for (var i = 0; i < blocks.length; i++) {
+        var block = blocks[i];
 
-        const linkMatch = block.match(/<a href="([^"]+)">([\s\S]*?)<\/a>/);
-        if (!linkMatch) continue;
+        // Title + URL
+        var titleMatch = block.match(
+            /<div class="titlecontrol">[\s\S]*?<a href="([^"]+)">([^<]+)<\/a>/
+        );
+        if (!titleMatch) continue;
 
-        let href = linkMatch[1].trim();
-        let title = linkMatch[2]
-            .replace(/<[^>]+>/g, "")
-            .replace(/\s+Film$/i, "")
-            .trim();
+        var url = titleMatch[1].trim();
+        var title = titleMatch[2].trim();
 
-        const imgMatch = block.match(/<img[^>]+src="([^"]+)"/i);
-        let image = imgMatch ? imgMatch[1].trim() : "";
+        // Poster
+        var posterMatch = block.match(
+            /<!--dle_image_begin:([^|]+)\|/
+        );
+        var poster = posterMatch ? posterMatch[1].trim() : null;
 
-        if (!href || !title) continue;
+        // Description (strip tags)
+        var descMatch = block.match(
+            /<div class="content_text searchresult_img">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/
+        );
+        var description = "";
+        if (descMatch) {
+            description = descMatch[1]
+                .replace(/<img[\s\S]*?>/, "")
+                .replace(/<br\s*\/?>/gi, "\n")
+                .replace(/<[^>]+>/g, "")
+                .trim();
+        }
 
-        if (!href.startsWith("http")) href = BASE_URL + href;
-        if (image && !image.startsWith("http")) image = BASE_URL + image;
-
-        if (seen.has(href)) continue;
-        seen.add(href);
-
-        results.push({ title, image, href });
+        results.push({
+            title: title,
+            url: url,
+            image: poster,
+            description: description
+        });
     }
 
     return results;
