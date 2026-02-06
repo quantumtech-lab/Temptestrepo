@@ -86,7 +86,7 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return "";
+        if (parts.length < 3) return null;
 
         const pageUrl = parts[0];
         const sMatch = urlData.match(/s=(\d+)/);
@@ -109,23 +109,46 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0";
+        const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36";
 
         for (const mirror of mirrorLinks) {
             if (mirror.includes('strmup.to')) {
-                const fileCode = mirror.split('/').pop();
-                const ajaxRes = await fetchv2("https://strmup.to/ajax/stream?filecode=" + fileCode, { 
-                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
-                });
-                const ajaxData = await ajaxRes.json();
-                
-                if (ajaxData && ajaxData.streaming_url) {
-                    // RETURN ONLY THE RAW STRING
-                    // This matches the "Output: URL" requirement in your documentation
-                    return ajaxData.streaming_url.replace(/\\/g, "");
-                }
+                try {
+                    const fileCode = mirror.split('/').pop();
+                    const ajaxRes = await fetchv2("https://strmup.to/ajax/stream?filecode=" + fileCode, { 
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
+                    });
+                    const ajaxData = await ajaxRes.json();
+                    
+                    if (ajaxData && ajaxData.streaming_url) {
+                        const masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                        
+                        // --- RE-IMPLEMENTING HANDSHAKE ---
+                        // These internal XHRs authorize your IP/Token for the segments
+                        try {
+                            const masterRes = await fetchv2(masterUrl, { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
+                            const masterContent = await masterRes.text();
+                            
+                            const vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8/);
+                            if (vIdxMatch) {
+                                const baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
+                                const vIdxUrl = baseUrl + vIdxMatch[0];
+                                const vIdxRes = await fetchv2(vIdxUrl, { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
+                                const vIdxContent = await vIdxRes.text();
+                                
+                                const tsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
+                                if (tsMatch) {
+                                    const tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + tsMatch[0];
+                                    await fetchv2(tsUrl, { headers: { 'User-Agent': browserUA, 'Range': 'bytes=0-1024' } });
+                                }
+                            }
+                        } catch(e) { console.log("Handshake background task failed"); }
+
+                        return masterUrl; 
+                    }
+                } catch (err) { continue; }
             }
         }
-        return ""; 
-    } catch (e) { return ""; }
+        return null;
+    } catch (e) { return null; }
 }
