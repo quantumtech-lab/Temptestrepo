@@ -81,40 +81,36 @@ async function extractEpisodes(url) {
 // 4. STREAM URL FUNCTION
 async function extractStreamUrl(urlOrHtml, isHtml = false) {
     try {
-        let html = urlOrHtml;
+        // Fetch page HTML
+        const response = await fetchv2(url, { 'Referer': BASE_URL + '/' });
+        const html = await response.text();
 
-        // If it's a URL, fetch it
-        if (!isHtml) {
-            const response = await fetchv2(urlOrHtml, { 'Referer': BASE_URL + '/' });
-            html = await response.text();
-        }
-
-        // Grab .show() JSON data
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        // Extract the .show() JSON (contains mirrors/episodes)
+        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/;
         const match = showRegex.exec(html);
         if (!match) return null;
 
         const seasons = JSON.parse(match[1].replace(/'/g, '"'));
         if (!seasons.length || !seasons[0].length) return null;
 
-        const mirror = seasons[0][0]; // First episode / movie
-        if (!mirror || !mirror.includes('strmup.to')) return null;
+        const mirror = seasons[0][0]; // first mirror
+        if (!mirror) return null;
 
-        const fileCode = mirror.split('/').pop();
+        // 1️⃣ If mirror is already a full URL, use it
+        let embedUrl = mirror.startsWith('http') ? mirror : `https:${mirror}`;
 
-        // Fetch actual streaming URL
-        const ajaxRes = await fetchv2(
-            `https://strmup.to/ajax/stream?filecode=${fileCode}`,
-            {
-                'Referer': 'https://strmup.to',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
-            }
-        );
+        // 2️⃣ If the URL is a Kinoger internal page, fetch its iframe
+        const embedPageResponse = await fetchv2(embedUrl, { 'Referer': BASE_URL + '/' });
+        const embedHtml = await embedPageResponse.text();
 
-        const ajaxData = await ajaxRes.json();
-        if (!ajaxData || !ajaxData.streaming_url) return null;
+        const iframeMatch = embedHtml.match(/<iframe[^>]+src="([^"]+)"/i);
+        if (iframeMatch && iframeMatch[1]) {
+            embedUrl = iframeMatch[1].startsWith('http') ? iframeMatch[1] : `https:${iframeMatch[1]}`;
+        }
 
-        return ajaxData.streaming_url.replace(/\\/g, '');
+        // ✅ Return the embed URL for AsyncJS
+        return embedUrl;
+
     } catch (e) {
         return null;
     }
