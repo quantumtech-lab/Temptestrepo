@@ -79,13 +79,9 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
-async function extractStreamUrl(urlOrHtml, isHtml = false) {
+async function extractStreamUrl(html) {
     try {
-        // Fetch page HTML
-        const response = await fetchv2(url, { 'Referer': BASE_URL + '/' });
-        const html = await response.text();
-
-        // Extract the .show() JSON (contains mirrors/episodes)
+        // Extract .show() JSON (contains mirrors/episodes)
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/;
         const match = showRegex.exec(html);
         if (!match) return null;
@@ -93,23 +89,19 @@ async function extractStreamUrl(urlOrHtml, isHtml = false) {
         const seasons = JSON.parse(match[1].replace(/'/g, '"'));
         if (!seasons.length || !seasons[0].length) return null;
 
-        const mirror = seasons[0][0]; // first mirror
+        const mirror = seasons[0][0]; // first mirror (movie or first episode)
         if (!mirror) return null;
 
-        // 1️⃣ If mirror is already a full URL, use it
-        let embedUrl = mirror.startsWith('http') ? mirror : `https:${mirror}`;
-
-        // 2️⃣ If the URL is a Kinoger internal page, fetch its iframe
-        const embedPageResponse = await fetchv2(embedUrl, { 'Referer': BASE_URL + '/' });
-        const embedHtml = await embedPageResponse.text();
-
-        const iframeMatch = embedHtml.match(/<iframe[^>]+src="([^"]+)"/i);
-        if (iframeMatch && iframeMatch[1]) {
-            embedUrl = iframeMatch[1].startsWith('http') ? iframeMatch[1] : `https:${iframeMatch[1]}`;
-        }
-
-        // ✅ Return the embed URL for AsyncJS
-        return embedUrl;
+        // Use streamAsyncjs format
+        return {
+            // AsyncJS mode tells Sora to handle iframe/embed URLs
+            asyncjs: true,
+            url: mirror.startsWith('http') ? mirror : `https:${mirror}`,
+            headers: {
+                'Referer': BASE_URL + '/',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+            }
+        };
 
     } catch (e) {
         return null;
