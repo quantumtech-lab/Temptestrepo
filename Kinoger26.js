@@ -132,7 +132,7 @@ async function extractStreamUrl(urlData) {
                             "url": finalUrl,
                             "headers": {
                                 "User-Agent": browserUA,
-                                "Referer": "https://strmup.to",
+                                "Referer": mirror,
                                 "Connection": "keep-alive"
                             }
                         });
