@@ -196,8 +196,6 @@ function extractEpisodes(html) {
 /* =========================
    4. STREAM ASYNC
    ========================= */
-const BASE_URL = "https://kinoger.to";
-
 async function extractStreamUrl(input) {
     try {
         let html = input;
