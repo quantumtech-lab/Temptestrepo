@@ -86,11 +86,12 @@ async function extractEpisodes(url) {
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return null;
+        if (parts.length < 3) return null; // Sora docs: return null if not found
 
         const pageUrl = parts[0];
-        const sIdx = parseInt(parts[1].split('=')[1]) - 1;
-        const eIdx = parseInt(parts[2].split('=')[1]) - 1;
+        // 0-BASED FIX: No "-1" here because your episodes now pass 0-based indices
+        const sIdx = parseInt(parts[1].split('=')[1]);
+        const eIdx = parseInt(parts[2].split('=')[1]);
 
         const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
         const html = await response.text();
@@ -115,7 +116,7 @@ async function extractStreamUrl(urlData) {
 
             try {
                 const fileCode = mirror.split('/').pop();
-                const ajaxUrl = `https://strmup.toajax/stream?filecode=${fileCode}`;
+                const ajaxUrl = "https://strmup.toajax/stream?filecode=" + fileCode;
                 const ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
                 const ajaxData = await ajaxRes.json();
                 
@@ -123,7 +124,7 @@ async function extractStreamUrl(urlData) {
                     const masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
                     const baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
 
-                    // SEQUENTIAL Handshake Pings (Crucial for StrmUp)
+                    // Sequential Handshake (Essential for StrmUp)
                     try {
                         const masterRes = await fetchv2(masterUrl, { headers: commonHeaders });
                         const masterContent = await masterRes.text();
@@ -139,18 +140,16 @@ async function extractStreamUrl(urlData) {
                                 });
                             }
                         }
-                        const aIdxMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8/);
-                        if (aIdxMatch) await fetchv2(aIdxMatch[0], { headers: commonHeaders });
                     } catch(e) {}
 
-                    // Sora documentation: Return ONLY the URL string
+                    // IMPORTANT: Return ONLY the raw URL string per Sora docs
                     return masterUrl; 
                 }
             } catch (err) { continue; }
         }
 
-        return null;
+        return null; // No mirrors worked
     } catch (e) {
-        return null;
+        return null; // Global crash
     }
 }
