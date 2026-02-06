@@ -123,26 +123,19 @@ async function extractStreamUrl(urlData) {
                     if (ajaxData && ajaxData.streaming_url) {
                         const masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
                         
-                        // --- RE-IMPLEMENTING HANDSHAKE ---
-                        // These internal XHRs authorize your IP/Token for the segments
+                        // --- OPTIMIZED FAST HANDSHAKE ---
+                        // We only do the Master and Index ping. We skip the .ts ping to save time and prevent 504.
                         try {
-                            const masterRes = await fetchv2(masterUrl, { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
-                            const masterContent = await masterRes.text();
+                            const mRes = await fetchv2(masterUrl, { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
+                            const mContent = await mRes.text();
                             
-                            const vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8/);
-                            if (vIdxMatch) {
+                            const vIdx = mContent.match(/index_[^"'\s]+\.m3u8/);
+                            if (vIdx) {
                                 const baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
-                                const vIdxUrl = baseUrl + vIdxMatch[0];
-                                const vIdxRes = await fetchv2(vIdxUrl, { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
-                                const vIdxContent = await vIdxRes.text();
-                                
-                                const tsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
-                                if (tsMatch) {
-                                    const tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + tsMatch[0];
-                                    await fetchv2(tsUrl, { headers: { 'User-Agent': browserUA, 'Range': 'bytes=0-1024' } });
-                                }
+                                // Fire and forget the index ping
+                                fetchv2(baseUrl + vIdx[0], { headers: { 'User-Agent': browserUA, 'Referer': 'https://strmup.to' } });
                             }
-                        } catch(e) { console.log("Handshake background task failed"); }
+                        } catch(e) {}
 
                         return masterUrl; 
                     }
