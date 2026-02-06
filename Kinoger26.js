@@ -116,7 +116,7 @@ async function extractStreamUrl(urlData) {
 
             try {
                 const fileCode = mirror.split('/').pop();
-                const ajaxUrl = "https://strmup.toajax/stream?filecode=" + fileCode;
+                const ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
                 const ajaxRes = await fetchv2(ajaxUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest', ...commonHeaders } });
                 const ajaxData = await ajaxRes.json();
                 
