@@ -50,44 +50,34 @@ async function extractDetails(url) {
 }
 
 // 3. EPISODES FUNCTION
-async function extractEpisodes(url) {
+// 2. DETAILS FUNCTION (Ensuring strict object format)
+async function extractDetails(url) {
     try {
-        const response = await fetchv2(url, { 'Referer': BASE_URL + '/' });
+        const response = await fetchv2(url, { headers: { 'Referer': BASE_URL + '/' }, redirect: 'follow' });
         const html = await response.text();
+        const descMatch = html.match(/text-align:\s*right;?["'][^>]*>[\s\S]*?<\/div>([\s\S]*?)<br><br>/i);
         
-        // Find the first available hoster script to build the season structure
-        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
-        let match = showRegex.exec(html); 
-        if (!match) return JSON.stringify([{ "href": url + "|s=0|e=0", "number": 1, "title": "Movie/Full" }]);
+        let description = "German Stream on Kinoger";
+        if (descMatch && descMatch[1]) {
+            description = descMatch[1].replace(/<[^>]*>/g, "").replace(/[\r\n\t]+/g, " ").trim();
+        }
 
-        // Clean and parse: Result is usually [ [S1E1, S1E2], [S2E1, S2E2] ]
-        let rawJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
-        const seasonData = JSON.parse(rawJson);
-
-        const episodes = [];
-        seasonData.forEach((seasonArray, sIdx) => {
-            seasonArray.forEach((_, eIdx) => {
-                episodes.push({
-                    "href": `${url}|s=${sIdx}|e=${eIdx}`,
-                    "number": eIdx + 1,
-                    "season": sIdx + 1,
-                    "title": `S${sIdx + 1} E${eIdx + 1}`
-                });
-            });
-        });
-
-        return JSON.stringify(episodes);
-    } catch (e) {
-        return JSON.stringify([]);
+        // Return a single object string
+        return JSON.stringify({
+            "description": description,
+            "aliases": "Kinoger HD",
+            "airdate": "2023" // Use a string year
+        }); 
+    } catch (e) { 
+        return JSON.stringify({ "description": "Error", "aliases": "", "airdate": "" }); 
     }
 }
 
-// 4. STREAM URL FUNCTION
-// --- Helper Function: Strmup Handshake ---
+// 4. STREAM URL FUNCTION (Passing headers to the player)
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
-        if (parts.length < 3) return null;
+        if (parts.length < 3) return "";
 
         const pageUrl = parts[0];
         const sMatch = urlData.match(/s=(\d+)/);
@@ -110,32 +100,29 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        const browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0";
+        const browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
 
         for (const mirror of mirrorLinks) {
-            if (mirror.indexOf('strmup.to') !== -1) {
-                try {
-                    const fileCode = mirror.split('/').pop();
-                    const ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
-                    
-                    const ajaxRes = await fetchv2(ajaxUrl, { 
-                        headers: { 
-                            'X-Requested-With': 'XMLHttpRequest', 
-                            'Referer': mirror,
-                            'User-Agent': browserUA 
-                        } 
+            if (mirror.includes('strmup.to')) {
+                const fileCode = mirror.split('/').pop();
+                const ajaxRes = await fetchv2("https://strmup.to/ajax/stream?filecode=" + fileCode, { 
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': browserUA } 
+                });
+                const ajaxData = await ajaxRes.json();
+                
+                if (ajaxData && ajaxData.streaming_url) {
+                    const finalUrl = ajaxData.streaming_url.replace(/\\/g, "");
+                    // SORA TIP: If the plain URL fails, return this format to force headers into the player
+                    return JSON.stringify({
+                        "url": finalUrl,
+                        "headers": {
+                            "Referer": "https://strmup.to",
+                            "User-Agent": browserUA
+                        }
                     });
-                    const ajaxData = await ajaxRes.json();
-                    
-                    if (ajaxData && ajaxData.streaming_url) {
-                        // Return the direct URL immediately with no extra pings
-                        return ajaxData.streaming_url.replace(/\\/g, "");
-                    }
-                } catch (err) { continue; }
+                }
             }
         }
-        return null; 
-    } catch (e) {
-        return null;
-    }
+        return "";
+    } catch (e) { return ""; }
 }
