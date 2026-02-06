@@ -30,6 +30,7 @@ async function searchResults(keyword) {
 }
 
 // 2. DETAILS FUNCTION
+// 2. DETAILS FUNCTION (Fixed for Sora Object Format)
 async function extractDetails(url) {
     try {
         const response = await fetchv2(url, { headers: { 'Referer': BASE_URL + '/' } });
@@ -41,12 +42,15 @@ async function extractDetails(url) {
             description = descriptionMatch[1].replace(/<[^>]*>/g, "").replace(/[\r\n\t]+/g, " ").trim();
         }
 
+        // RETURN A SINGLE OBJECT, NOT AN ARRAY
         return JSON.stringify({
-            description: description.replace(/"/g, "'"),
-            aliases: "HD Stream",
-            airdate: "Kinoger"
-        }); // Must be Stringified JSON Object
-    } catch (e) { return JSON.stringify({ description: "Error loading details" }); }
+            "description": description.replace(/"/g, "'"),
+            "aliases": "HD Stream",
+            "airdate": "Kinoger"
+        }); 
+    } catch (e) { 
+        return JSON.stringify({ "description": "Error loading details" }); 
+    }
 }
 
 // 3. EPISODES FUNCTION
