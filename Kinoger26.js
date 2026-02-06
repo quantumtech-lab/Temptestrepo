@@ -50,26 +50,35 @@ async function extractDetails(url) {
 }
 
 // 3. EPISODES FUNCTION
-// 2. DETAILS FUNCTION (Ensuring strict object format)
-async function extractDetails(url) {
+async function extractEpisodes(url) {
     try {
-        const response = await fetchv2(url, { headers: { 'Referer': BASE_URL + '/' }, redirect: 'follow' });
+        const response = await fetchv2(url, { 'Referer': BASE_URL + '/' });
         const html = await response.text();
-        const descMatch = html.match(/text-align:\s*right;?["'][^>]*>[\s\S]*?<\/div>([\s\S]*?)<br><br>/i);
         
-        let description = "German Stream on Kinoger";
-        if (descMatch && descMatch[1]) {
-            description = descMatch[1].replace(/<[^>]*>/g, "").replace(/[\r\n\t]+/g, " ").trim();
-        }
+        // Find the first available hoster script to build the season structure
+        const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
+        let match = showRegex.exec(html); 
+        if (!match) return JSON.stringify([{ "href": url + "|s=0|e=0", "number": 1, "title": "Movie/Full" }]);
 
-        // Return a single object string
-        return JSON.stringify({
-            "description": description,
-            "aliases": "Kinoger HD",
-            "airdate": "2023" // Use a string year
-        }); 
-    } catch (e) { 
-        return JSON.stringify({ "description": "Error", "aliases": "", "airdate": "" }); 
+        // Clean and parse: Result is usually [ [S1E1, S1E2], [S2E1, S2E2] ]
+        let rawJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
+        const seasonData = JSON.parse(rawJson);
+
+        const episodes = [];
+        seasonData.forEach((seasonArray, sIdx) => {
+            seasonArray.forEach((_, eIdx) => {
+                episodes.push({
+                    "href": `${url}|s=${sIdx}|e=${eIdx}`,
+                    "number": eIdx + 1,
+                    "season": sIdx + 1,
+                    "title": `S${sIdx + 1} E${eIdx + 1}`
+                });
+            });
+        });
+
+        return JSON.stringify(episodes);
+    } catch (e) {
+        return JSON.stringify([]);
     }
 }
 
