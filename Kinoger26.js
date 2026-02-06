@@ -58,7 +58,8 @@ async function extractEpisodes(url) {
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
         let match = showRegex.exec(html); 
         
-        if (!match) return JSON.stringify([{ "href": url + "|s=1|e=1", "number": "1" }]);
+        // Movie Fallback (S=1, E=1)
+        if (!match) return JSON.stringify([{ "href": url + "|s=1|e=1", "number": "1", "title": "Movie/Full" }]);
 
         let rawJson = match[1].replace(/'/g, '"').replace(/,\s*\]/g, ']');
         const seasonData = JSON.parse(rawJson);
@@ -66,15 +67,22 @@ async function extractEpisodes(url) {
         const episodes = [];
         seasonData.forEach((seasonArray, sIdx) => {
             seasonArray.forEach((_, eIdx) => {
+                // We use +1 because Sora UI and your pipes expect 1-based counting
+                const seasonNumber = sIdx + 1;
+                const episodeNumber = eIdx + 1;
+
                 episodes.push({
-                    "href": `${url}|s=${sIdx + 1}|e=${eIdx + 1}`,
-                    "number": (eIdx + 1).toString() // Sora docs show number as a string
+                    "href": url + "|s=" + seasonNumber + "|e=" + episodeNumber,
+                    "number": episodeNumber.toString(),
+                    "title": "S" + seasonNumber + " E" + episodeNumber
                 });
             });
         });
 
-        return JSON.stringify(episodes); // Must be Stringified JSON Array
-    } catch (e) { return JSON.stringify([]); }
+        return JSON.stringify(episodes); 
+    } catch (e) { 
+        return JSON.stringify([]); 
+    }
 }
 
 // 4. STREAM URL FUNCTION
