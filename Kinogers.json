@@ -14,5 +14,7 @@
   "scriptUrl": "https://raw.githubusercontent.com/quantumtech-lab/Temptestrepo/refs/heads/main/Kinoger27.js",
   "asyncJS": true,
   "streamAsyncJS": false,
-  "softsub": false,
+  "softsub": true,
+  "supportsSora": true,
+  "supportsLuna": true
 }
