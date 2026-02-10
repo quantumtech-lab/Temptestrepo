@@ -1,6 +1,3 @@
-Here's the complete corrected JavaScript code:
-
-```javascript
 const BASE_URL = 'https://kinoger.to';
 
 // 1. SEARCH FUNCTION
