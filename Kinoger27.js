@@ -103,8 +103,7 @@ async function extractStreamUrl(urlData) {
             } catch (e) {}
         }
 
-        var browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
-        var commonHeaders = { 'Referer': 'https://strmup.to', 'User-Agent': browserUA };
+        var browserUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
         for (var i = 0; i < mirrorLinks.length; i++) {
             var mirror = mirrorLinks[i];
@@ -113,7 +112,7 @@ async function extractStreamUrl(urlData) {
                     var fileCode = mirror.split('/').pop();
                     var ajaxUrl = "https://strmup.to/ajax/stream?filecode=" + fileCode;
                     
-                    // 1. Fetch AJAX Stream Info
+                    // Fetch AJAX Stream Info
                     var ajaxRes = await fetchv2(ajaxUrl, { 
                         'X-Requested-With': 'XMLHttpRequest',
                         'Referer': 'https://strmup.to',
@@ -123,38 +122,24 @@ async function extractStreamUrl(urlData) {
                     
                     if (ajaxData && ajaxData.streaming_url) {
                         var masterUrl = ajaxData.streaming_url.replace(/\\/g, "");
-                        var baseUrl = masterUrl.substring(0, masterUrl.lastIndexOf('/') + 1);
+                        
+                        // Optional: Pre-warm the stream
+                        try {
+                            await fetchv2(masterUrl, { 
+                                'Referer': 'https://strmup.to',
+                                'User-Agent': browserUA
+                            });
+                        } catch (e) {}
 
-                        // 2. Trigger Master Manifest Request
-                        var masterRes = await fetchv2(masterUrl, commonHeaders);
-                        var masterContent = await masterRes.text();
-
-                        // 3. Trigger Video Index and First Video Segment (.ts)
-                        var vIdxMatch = masterContent.match(/index_[^"'\s]+\.m3u8[^"'\s]*/);
-                        if (vIdxMatch) {
-                            var vIdxUrl = (vIdxMatch[0].indexOf('http') === 0) ? vIdxMatch[0] : baseUrl + vIdxMatch[0];
-                            var vIdxRes = await fetchv2(vIdxUrl, commonHeaders);
-                            var vIdxContent = await vIdxRes.text();
-                            
-                            var firstTsMatch = vIdxContent.match(/seg_[^"'\s]+\.ts/);
-                            if (firstTsMatch) {
-                                var tsUrl = vIdxUrl.substring(0, vIdxUrl.lastIndexOf('/') + 1) + firstTsMatch[0];
-                                await fetchv2(tsUrl, { 
-                                    'Referer': 'https://strmup.to',
-                                    'User-Agent': browserUA,
-                                    'Range': 'bytes=0-1024'
-                                });
+                        // Return JSON with URL and headers
+                        return JSON.stringify({
+                            "url": masterUrl,
+                            "headers": {
+                                "Referer": "https://strmup.to",
+                                "User-Agent": browserUA,
+                                "Origin": "https://strmup.to"
                             }
-                        }
-
-                        // 4. Trigger Audio Index
-                        var aIdxMatch = masterContent.match(/https?:\/\/[^"'\s]+\/audio\/[^"'\s]+\/index\.m3u8[^"'\s]*/);
-                        if (aIdxMatch) {
-                            await fetchv2(aIdxMatch[0], commonHeaders);
-                        }
-
-                        // Return just the URL string (per documentation)
-                        return masterUrl;
+                        });
                     }
                 }
             } catch (err) { continue; }
