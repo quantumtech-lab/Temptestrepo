@@ -123,17 +123,17 @@ async function extractStreamUrl(urlData) {
                     if (ajaxData && ajaxData.streaming_url) {
                         const finalUrl = ajaxData.streaming_url.replace(/\\/g, "");
                         
-                        // FIRE-AND-FORGET WARMUP
-                        // We fetch the master manifest in the background to initialize the CDN session
-                        // without waiting for it to finish (this prevents the 504 timeout)
-                        fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to', 'Connection': 'keep-alive' } });
+                        // Handshake warmup (Essential for CDN session initialization)
+                        try {
+                            await fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to' } });
+                        } catch(e) {}
 
+                        // Sora specific: Passing headers along with the URL to the native player
                         return JSON.stringify({
                             "url": finalUrl,
                             "headers": {
                                 "User-Agent": mobileUA,
-                                "Referer": "https://strmup.to",
-                                "Connection": "keep-alive"
+                                "Referer": "https://strmup.to"
                             }
                         });
                     }
@@ -141,5 +141,7 @@ async function extractStreamUrl(urlData) {
             }
         }
         return null;
-    } catch (e) { return null; }
+    } catch (e) {
+        return null;
+    }
 }
