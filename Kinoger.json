@@ -5,7 +5,7 @@
     "name": "Community",
     "icon": "https://kinoger.to/templates/kinoger/images/logo.png"
   },
-  "version": "1.0.5",
+  "version": "1.0.6",
   "language": "German",
   "streamType": "HLS",
   "quality": "Multi",
@@ -15,7 +15,7 @@
   "type": "shows", 
   "asyncJS": true,
   "streamAsyncJS": false,
-  "softsub": false,
+  "type": "show",
   "supportsSora": true,
   "supportsLuna": true
 }
