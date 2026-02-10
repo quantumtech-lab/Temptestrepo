@@ -83,59 +83,6 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION (Passing headers to the player)
-I can see your Sora module code for Kinoger. Let me review it against the documentation to identify potential issues.
-
-## Issues I've Found:
-
-### 1. **Critical Error in `extractStreamUrl` - Undefined Variable**
-```javascript
-"User-Agent": browserUA,  // ❌ This variable is not defined!
-```
-You defined `mobileUA` earlier but then try to use `browserUA` in the returned headers. This will cause an error.
-
-**Fix:**
-```javascript
-return JSON.stringify({
-    "url": finalUrl,
-    "headers": {
-        "User-Agent": mobileUA,  // ✅ Use the variable you defined
-        "Referer": mirror,
-        "Connection": "keep-alive"
-    }
-});
-```
-
-### 2. **Incorrect `fetchv2` Usage in Several Places**
-According to the docs, `fetchv2(url, headers, method, body)` takes **headers as a separate object**, not nested inside an options object.
-
-**Your code:**
-```javascript
-const response = await fetchv2(searchUrl, { headers: { 'Referer': BASE_URL + '/' } });
-```
-
-**Should be:**
-```javascript
-const response = await fetchv2(searchUrl, { 'Referer': BASE_URL + '/' });
-```
-
-This applies to:
-- `searchResults` function
-- `extractDetails` function (also has `redirect: 'follow'` which isn't supported)
-- `extractEpisodes` function
-- Both `fetchv2` calls in `extractStreamUrl`
-
-### 3. **Invalid Option in `extractDetails`**
-```javascript
-const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
-```
-The `redirect: 'follow'` option isn't documented in Sora's `fetchv2`. Remove it.
-
-### 4. **Fire-and-Forget Pattern**
-Your warmup fetch won't cause errors, but it won't wait for completion either (which seems intentional based on your comment). Just be aware that if the warmup is the goal, it might not complete before you return.
-
-## Corrected `extractStreamUrl`:
-
-```javascript
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
