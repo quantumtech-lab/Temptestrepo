@@ -83,6 +83,59 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION (Passing headers to the player)
+I can see your Sora module code for Kinoger. Let me review it against the documentation to identify potential issues.
+
+## Issues I've Found:
+
+### 1. **Critical Error in `extractStreamUrl` - Undefined Variable**
+```javascript
+"User-Agent": browserUA,  // ❌ This variable is not defined!
+```
+You defined `mobileUA` earlier but then try to use `browserUA` in the returned headers. This will cause an error.
+
+**Fix:**
+```javascript
+return JSON.stringify({
+    "url": finalUrl,
+    "headers": {
+        "User-Agent": mobileUA,  // ✅ Use the variable you defined
+        "Referer": mirror,
+        "Connection": "keep-alive"
+    }
+});
+```
+
+### 2. **Incorrect `fetchv2` Usage in Several Places**
+According to the docs, `fetchv2(url, headers, method, body)` takes **headers as a separate object**, not nested inside an options object.
+
+**Your code:**
+```javascript
+const response = await fetchv2(searchUrl, { headers: { 'Referer': BASE_URL + '/' } });
+```
+
+**Should be:**
+```javascript
+const response = await fetchv2(searchUrl, { 'Referer': BASE_URL + '/' });
+```
+
+This applies to:
+- `searchResults` function
+- `extractDetails` function (also has `redirect: 'follow'` which isn't supported)
+- `extractEpisodes` function
+- Both `fetchv2` calls in `extractStreamUrl`
+
+### 3. **Invalid Option in `extractDetails`**
+```javascript
+const response = await fetchv2(url, { 'Referer': BASE_URL + '/', redirect: 'follow' });
+```
+The `redirect: 'follow'` option isn't documented in Sora's `fetchv2`. Remove it.
+
+### 4. **Fire-and-Forget Pattern**
+Your warmup fetch won't cause errors, but it won't wait for completion either (which seems intentional based on your comment). Just be aware that if the warmup is the goal, it might not complete before you return.
+
+## Corrected `extractStreamUrl`:
+
+```javascript
 async function extractStreamUrl(urlData) {
     try {
         const parts = urlData.split('|');
@@ -94,7 +147,7 @@ async function extractStreamUrl(urlData) {
         const sIdx = sMatch ? parseInt(sMatch[1]) : 0;
         const eIdx = eMatch ? parseInt(eMatch[1]) : 0;
 
-        const response = await fetchv2(pageUrl, { headers: { 'Referer': 'https://kinoger.to' } });
+        const response = await fetchv2(pageUrl, { 'Referer': 'https://kinoger.to' });
         const html = await response.text();
 
         const showRegex = /\.show\(\s*\d+\s*,\s*(\[\[[\s\S]*?\]\])\s*\)/g;
@@ -116,22 +169,26 @@ async function extractStreamUrl(urlData) {
                 try {
                     const fileCode = mirror.split('/').pop();
                     const ajaxRes = await fetchv2("https://strmup.to/ajax/stream?filecode=" + fileCode, { 
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Referer': mirror, 'User-Agent': mobileUA } 
+                        'X-Requested-With': 'XMLHttpRequest', 
+                        'Referer': mirror, 
+                        'User-Agent': mobileUA 
                     });
                     const ajaxData = await ajaxRes.json();
                     
                     if (ajaxData && ajaxData.streaming_url) {
                         const finalUrl = ajaxData.streaming_url.replace(/\\/g, "");
                         
-                        // FIRE-AND-FORGET WARMUP
-                        // We fetch the master manifest in the background to initialize the CDN session
-                        // without waiting for it to finish (this prevents the 504 timeout)
-                        fetchv2(finalUrl, { headers: { 'User-Agent': mobileUA, 'Referer': 'https://strmup.to', 'Connection': 'keep-alive' } });
+                        // Fire-and-forget warmup
+                        fetchv2(finalUrl, { 
+                            'User-Agent': mobileUA, 
+                            'Referer': 'https://strmup.to', 
+                            'Connection': 'keep-alive' 
+                        });
 
                         return JSON.stringify({
                             "url": finalUrl,
                             "headers": {
-                                "User-Agent": browserUA,
+                                "User-Agent": mobileUA,  // ✅ Fixed
                                 "Referer": mirror,
                                 "Connection": "keep-alive"
                             }
