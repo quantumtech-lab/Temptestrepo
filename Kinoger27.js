@@ -98,7 +98,6 @@ async function extractEpisodes(url) {
 }
 
 // 4. STREAM URL FUNCTION
-// 4. STREAM URL FUNCTION
 async function extractStreamUrl(urlData) {
     try {
         console.log("ExtractStreamUrl called with URL: " + urlData);
